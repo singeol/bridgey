@@ -1,7 +1,9 @@
 # Releasing Bridgey
 
-Bridgey publishes a signed Android APK and a Developer ID-signed, notarized
-macOS DMG from tags matching `v*`.
+Bridgey publishes a signed Android APK and a macOS DMG from tags matching `v*`.
+Without Apple secrets the Mac build uses an ad-hoc signature; when those
+secrets are configured, the same workflow adds Developer ID signing and
+notarization.
 
 ## Android signing
 

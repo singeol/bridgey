@@ -44,17 +44,20 @@ jobs:
 
   macos:
     runs-on: macos-15
+    env:
+      MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+      APPLE_NOTARY_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       - name: Import Developer ID certificate
+        if: ${{ env.MACOS_CERTIFICATE_BASE64 != '' }}
         env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/bridgey-certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/bridgey-signing.keychain-db"
-          echo "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -62,9 +65,8 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
       - name: Restore notarization API key
-        env:
-          API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-        run: echo "$API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+        if: ${{ env.APPLE_NOTARY_API_KEY_BASE64 != '' }}
+        run: echo "$APPLE_NOTARY_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
       - run: chmod +x build-app.sh package-release.sh
         working-directory: macos
       - run: swift test -c release
@@ -86,15 +88,12 @@ jobs:
     needs: [android, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          body: |
-            Bridgey connects Android and macOS directly over the local network.
-
-            Built with the assistance of OpenAI Codex.
+          body_path: RELEASE_NOTES.md
           files: artifacts/*
