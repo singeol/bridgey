@@ -1,8 +1,15 @@
-# Bridgey v0.1.0
+# Bridgey v0.1.1
 
-The first public release of Bridgey — a local-first bridge between Android and
-macOS, inspired by KDE Connect and Apple Continuity. No account, cloud service,
-or internet connection is required for the core features.
+Bridgey v0.1.1 is the first maintenance update for the local-first bridge
+between Android and macOS. No account, cloud service, or internet connection is
+required for the core features.
+
+## Fixed
+
+- Rebuilt the macOS application icon as a complete multi-resolution Retina
+  icon containing native representations from 16×16 through 1024×1024.
+- Added deterministic icon packaging and validation to prevent a release from
+  accidentally shipping only a low-resolution icon representation.
 
 ## Included
 
@@ -28,7 +35,7 @@ or internet connection is required for the core features.
 
 ## macOS installation note
 
-This first release is ad-hoc signed because the project does not yet have a
+This release is ad-hoc signed because the project does not yet have a
 paid Apple Developer ID certificate. macOS may block the first launch.
 
 1. Copy Bridgey to Applications.
@@ -45,7 +52,7 @@ application protocol.
 - Both devices must currently be reachable on the same local network.
 - Android background clipboard restrictions require an explicit user action to
   send the phone clipboard.
-- The macOS build is not notarized in v0.1.0.
+- The macOS build is not notarized in v0.1.1.
 - Linux support, notification actions, SMS, media control, and remote input are
   planned for later versions.
 

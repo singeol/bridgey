@@ -16,7 +16,9 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 cp ".build/$CONFIGURATION/BridgeyMac" "$APP_PATH/Contents/MacOS/BridgeyMac"
 cp "Resources/Info.plist" "$APP_PATH/Contents/Info.plist"
-cp "Resources/Bridgey.icns" "$APP_PATH/Contents/Resources/Bridgey.icns"
+python3 ./create-icns.py \
+  "Resources/AppIcon.iconset" \
+  "$APP_PATH/Contents/Resources/Bridgey.icns"
 if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
   codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
 else
