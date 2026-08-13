@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridgey.dev/schema/envelope-v1.schema.json",
+  "title": "Bridgey protocol envelope v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "id", "type", "timestamp", "payload"],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "format": "uuid" },
+    "type": { "type": "string", "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$", "maxLength": 96 },
+    "timestamp": { "type": "integer", "minimum": 0 },
+    "replyTo": { "type": ["string", "null"], "format": "uuid" },
+    "expectsReply": { "type": "boolean", "default": false },
+    "payload": { "type": "object" }
+  }
+}
