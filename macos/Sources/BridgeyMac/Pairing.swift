@@ -75,6 +75,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var clipboardStatus: String? = nil
     @Published private(set) var remoteBattery: RemoteBatteryStatus? = nil
     @Published private(set) var notificationsAuthorized = false
+    @Published private(set) var notificationPermissionDetermined = false
     @Published private(set) var fileTransferStatus: String? = nil
     @Published private(set) var fileTransferActive = false
     @Published private(set) var fileTransfers: [String: FileTransferRow] = [:]
@@ -106,9 +107,8 @@ final class PairingCoordinator: ObservableObject {
         self.deviceName = deviceName
         identity = MacIdentity()
         trustedDeviceIDs = Set(UserDefaults.standard.stringArray(forKey: "trustedDeviceIDs") ?? [])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.requestNotificationAuthorization()
-        }
+        UNUserNotificationCenter.current().delegate = notificationPresenter
+        refreshNotificationAuthorization()
         startListener()
         clipboardHotKey = GlobalHotKey(
             keyCode: UInt32(kVK_ANSI_C),
@@ -118,11 +118,36 @@ final class PairingCoordinator: ObservableObject {
         }
     }
 
+    func refreshNotificationAuthorization() {
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.getNotificationSettings { [weak self] settings in
+            let authorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+            DispatchQueue.main.async {
+                self?.notificationsAuthorized = authorized
+                self?.notificationPermissionDetermined = settings.authorizationStatus != .notDetermined
+            }
+        }
+    }
+
+    func enableNotifications() {
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.getNotificationSettings { [weak self] settings in
+            guard let self else { return }
+            if settings.authorizationStatus != .notDetermined {
+                DispatchQueue.main.async { self.openNotificationSettings() }
+                return
+            }
+            Task { @MainActor in self.requestNotificationAuthorization() }
+        }
+    }
+
     private func requestNotificationAuthorization() {
         let notificationCenter = UNUserNotificationCenter.current()
-        notificationCenter.delegate = notificationPresenter
         notificationCenter.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            DispatchQueue.main.async { [weak self] in self?.notificationsAuthorized = granted }
+            DispatchQueue.main.async { [weak self] in
+                self?.notificationsAuthorized = granted
+                self?.notificationPermissionDetermined = true
+            }
             if let error {
                 NSLog("PLUGIN notifications authorization failed error=%@", String(describing: error))
             } else {

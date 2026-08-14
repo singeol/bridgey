@@ -87,6 +87,7 @@ private struct BridgeyPanel: View {
         }
         .padding(16)
         .frame(width: 340)
+        .onAppear { pairing.refreshNotificationAuthorization() }
     }
 
     private var isConnected: Bool {
@@ -150,8 +151,11 @@ private struct BridgeyPanel: View {
                     .foregroundStyle(.secondary)
             }
             if !pairing.notificationsAuthorized {
-                Button { pairing.openNotificationSettings() } label: {
-                    Label("Enable Mac notifications", systemImage: "bell.badge")
+                Button { pairing.enableNotifications() } label: {
+                    Label(
+                        pairing.notificationPermissionDetermined ? "Open notification settings" : "Enable Mac notifications",
+                        systemImage: "bell.badge"
+                    )
                 }
                 .buttonStyle(.plain)
                 .font(.caption)
@@ -266,12 +270,22 @@ private struct SettingsView: View {
         Form {
             Section("Bridgey") {
                 LabeledContent("Device", value: Host.current().localizedName ?? "Mac")
-                LabeledContent("Version", value: "0.1.0")
+                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
             }
             Section("Features") {
                 Label("Clipboard sharing", systemImage: "doc.on.clipboard")
                 Label("File transfer", systemImage: "arrow.left.arrow.right")
-                Label("Android notifications", systemImage: "bell")
+                HStack {
+                    Label("Android notifications", systemImage: "bell")
+                    Spacer()
+                    if pairing.notificationsAuthorized {
+                        Text("Enabled").foregroundStyle(.secondary)
+                    } else {
+                        Button(pairing.notificationPermissionDetermined ? "Settings" : "Enable") {
+                            pairing.enableNotifications()
+                        }
+                    }
+                }
                 Label("Find device", systemImage: "location.magnifyingglass")
             }
             Text("Bridgey communicates directly over your local network. Clipboard, files, and notification content are encrypted in transit.")
@@ -280,5 +294,6 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .padding(10)
         .frame(width: 480, height: 360)
+        .onAppear { pairing.refreshNotificationAuthorization() }
     }
 }

@@ -1,9 +1,12 @@
 package dev.bridgey.android
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -43,11 +46,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,10 +75,19 @@ private val BridgeyDarkScheme = darkColorScheme(
     secondaryContainer = Color(0xFF49454F),
 )
 
+private enum class PermissionPrompt {
+    BridgeyNotifications,
+    NotificationForwarding,
+}
+
 class MainActivity : ComponentActivity() {
     private lateinit var discovery: NsdDiscoveryService
     private lateinit var pairing: PairingCoordinator
     private var notificationAccessEnabled by mutableStateOf(false)
+    private var appNotificationsEnabled by mutableStateOf(false)
+    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshPermissionState()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,20 +99,22 @@ class MainActivity : ComponentActivity() {
         bridgey.enableBridgey()
         pairing = bridgey.pairing
         discovery = bridgey.discovery
-        if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         startForegroundService(Intent(this, BridgeyConnectionService::class.java))
         setContent {
             BridgeyTheme {
                 BridgeyApp(
                     discovery = discovery,
                     pairing = pairing,
+                    appNotificationsEnabled = appNotificationsEnabled,
                     notificationAccessEnabled = notificationAccessEnabled,
                     onTurnOff = {
                         startService(Intent(this, BridgeyConnectionService::class.java).setAction(BridgeyConnectionService.ACTION_TURN_OFF))
                         finishAndRemoveTask()
                     },
-                    onOpenNotificationSettings = {
-                        startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    onRequestAppNotifications = ::requestAppNotifications,
+                    onOpenAppNotificationSettings = ::openAppNotificationSettings,
+                    onOpenNotificationAccessSettings = {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                 )
             }
@@ -109,7 +123,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshPermissionState()
+    }
+
+    private fun refreshPermissionState() {
+        appNotificationsEnabled = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         notificationAccessEnabled = NotificationAccess.isEnabled(this)
+    }
+
+    private fun requestAppNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            openAppNotificationSettings()
+        }
+    }
+
+    private fun openAppNotificationSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+        )
     }
 }
 
@@ -135,9 +169,12 @@ private fun UnsupportedProfile() = Surface(Modifier.fillMaxSize()) {
 private fun BridgeyApp(
     discovery: NsdDiscoveryService,
     pairing: PairingCoordinator,
+    appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
     onTurnOff: () -> Unit,
-    onOpenNotificationSettings: () -> Unit,
+    onRequestAppNotifications: () -> Unit,
+    onOpenAppNotificationSettings: () -> Unit,
+    onOpenNotificationAccessSettings: () -> Unit,
 ) {
     val peers by discovery.peers.collectAsStateWithLifecycle()
     val pairingState by pairing.state.collectAsStateWithLifecycle()
@@ -146,6 +183,7 @@ private fun BridgeyApp(
     val fileTransfers by pairing.fileTransfers.collectAsStateWithLifecycle()
     val phoneRinging by pairing.phoneRinging.collectAsStateWithLifecycle()
     val macRinging by pairing.macRinging.collectAsStateWithLifecycle()
+    var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -170,8 +208,16 @@ private fun BridgeyApp(
             phoneRinging = phoneRinging,
             macRinging = macRinging,
             pairing = pairing,
+            appNotificationsEnabled = appNotificationsEnabled,
             notificationAccessEnabled = notificationAccessEnabled,
-            onOpenNotificationSettings = onOpenNotificationSettings,
+            onAppNotifications = {
+                if (appNotificationsEnabled) onOpenAppNotificationSettings()
+                else permissionPrompt = PermissionPrompt.BridgeyNotifications
+            },
+            onNotificationForwarding = {
+                if (notificationAccessEnabled) onOpenNotificationAccessSettings()
+                else permissionPrompt = PermissionPrompt.NotificationForwarding
+            },
             onTurnOff = onTurnOff,
             modifier = Modifier.padding(padding),
         )
@@ -198,6 +244,30 @@ private fun BridgeyApp(
         )
         else -> Unit
     }
+
+    permissionPrompt?.let { prompt ->
+        val isForwarding = prompt == PermissionPrompt.NotificationForwarding
+        AlertDialog(
+            onDismissRequest = { permissionPrompt = null },
+            title = { Text(if (isForwarding) "Forward Android notifications?" else "Allow Bridgey notifications?") },
+            text = {
+                Text(
+                    if (isForwarding) {
+                        "This optional access lets Bridgey read notification titles and text and send them only to your paired Mac over the encrypted local connection."
+                    } else {
+                        "Bridgey uses notifications to keep the connection visible and show file transfers, received files, and Find Device. It does not use notifications for advertising."
+                    },
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    permissionPrompt = null
+                    if (isForwarding) onOpenNotificationAccessSettings() else onRequestAppNotifications()
+                }) { Text("Continue") }
+            },
+            dismissButton = { TextButton(onClick = { permissionPrompt = null }) { Text("Not now") } },
+        )
+    }
 }
 
 @Composable
@@ -210,8 +280,10 @@ private fun DeviceScreen(
     phoneRinging: Boolean,
     macRinging: Boolean,
     pairing: PairingCoordinator,
+    appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
-    onOpenNotificationSettings: () -> Unit,
+    onAppNotifications: () -> Unit,
+    onNotificationForwarding: () -> Unit,
     onTurnOff: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -257,11 +329,20 @@ private fun DeviceScreen(
         item { SectionTitle("Services") }
         item {
             ServiceCard(
+                enabled = appNotificationsEnabled,
+                title = "Bridgey notifications",
+                detail = if (appNotificationsEnabled) "Connection, transfer, and Find Device controls are visible" else "Optional, but recommended for background controls",
+                action = if (appNotificationsEnabled) "Manage" else "Enable",
+                onClick = onAppNotifications,
+            )
+        }
+        item {
+            ServiceCard(
                 enabled = notificationAccessEnabled,
                 title = "Notification forwarding",
                 detail = if (notificationAccessEnabled) "Android notifications appear on your Mac" else "Permission is required to forward notifications",
                 action = if (notificationAccessEnabled) "Manage" else "Enable",
-                onClick = onOpenNotificationSettings,
+                onClick = onNotificationForwarding,
             )
         }
 
@@ -400,7 +481,7 @@ private fun compactTransferStatus(transfer: FileTransferState): String = transfe
 private fun ServiceCard(enabled: Boolean, title: String, detail: String, action: String, onClick: () -> Unit) {
     Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(10.dp).background(if (enabled) Color(0xFF2EAD69) else MaterialTheme.colorScheme.error, CircleShape))
+            Box(Modifier.size(10.dp).background(if (enabled) Color(0xFF2EAD69) else MaterialTheme.colorScheme.outline, CircleShape))
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Medium)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

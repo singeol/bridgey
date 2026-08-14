@@ -96,6 +96,25 @@ update must be signed with the same key.
 Local-network discovery works best on real devices on the same Wi-Fi network.
 The macOS executable may require local-network permission when prompted.
 
+## Permissions and privacy
+
+Bridgey asks for access only when the related feature needs it:
+
+- Android notifications let the foreground connection, transfer progress,
+  received files, and Find Device controls remain visible.
+- Android notification access is optional and is used only to forward a
+  notification's application name, title, and text to the paired Mac.
+- macOS local-network access is required for Bonjour discovery and direct
+  encrypted connections to Android devices.
+- macOS notifications are optional and are requested only when the user enables
+  Android notification display on the Mac.
+- File access is scoped to a file selected by the user and the Bridgey receive
+  directory (`Downloads/Bridgey`).
+
+Bridgey does not request location, contacts, camera, microphone, screen
+recording, Accessibility, Input Monitoring, or Full Disk Access. Permission
+denial disables only the corresponding optional integration.
+
 ## Development principles
 
 - Core routes envelopes and lifecycle events; it does not understand plugin
