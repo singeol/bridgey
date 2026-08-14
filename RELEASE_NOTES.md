@@ -1,15 +1,23 @@
-# Bridgey v0.1.1
+# Bridgey v0.1.2
 
-Bridgey v0.1.1 is the first maintenance update for the local-first bridge
-between Android and macOS. No account, cloud service, or internet connection is
+Bridgey v0.1.2 makes platform permissions smaller, clearer, and explicitly
+controlled by the user. No account, cloud service, or internet connection is
 required for the core features.
 
-## Fixed
+## Privacy and permissions
 
-- Rebuilt the macOS application icon as a complete multi-resolution Retina
-  icon containing native representations from 16×16 through 1024×1024.
-- Added deterministic icon packaging and validation to prevent a release from
-  accidentally shipping only a low-resolution icon representation.
+- Removed unused Android network-state, Wi-Fi control, and vibration
+  permissions.
+- Bridgey no longer requests Android or macOS notification permission
+  automatically at startup.
+- Added separate, contextual controls for Bridgey system notifications and the
+  optional Android notification-forwarding access.
+- Added plain-language explanations before opening sensitive system permission
+  dialogs.
+- Added the required macOS local-network usage description and Bonjour service
+  declaration.
+- Documented every requested capability and added a test that prevents unused
+  Android permissions from returning unnoticed.
 
 ## Included
 
@@ -52,7 +60,7 @@ application protocol.
 - Both devices must currently be reachable on the same local network.
 - Android background clipboard restrictions require an explicit user action to
   send the phone clipboard.
-- The macOS build is not notarized in v0.1.1.
+- The macOS build is not notarized in v0.1.2.
 - Linux support, notification actions, SMS, media control, and remote input are
   planned for later versions.
 
