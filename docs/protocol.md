@@ -142,7 +142,8 @@ number, and an independently AES-GCM-encrypted chunk. An encrypted
 `files.complete` repeats the transfer ID and hash; the receiver replies with
 `files.complete.ack` only after byte count and hash verification and the atomic
 rename of the partial file. The macOS v1 receiver saves collision-safe names in
-`~/Downloads/Bridgey` and removes partial files when a transfer is interrupted.
+a user-selected directory (default `~/Downloads/Bridgey`) and removes partial
+files when a transfer is interrupted.
 The Android v1 receiver writes through `MediaStore` to `Download/Bridgey` with
 `IS_PENDING` set until verification, so partial files are hidden and deleted on
 failure without requiring broad storage access.

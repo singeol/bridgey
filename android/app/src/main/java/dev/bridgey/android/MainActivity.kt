@@ -35,7 +35,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -105,6 +107,8 @@ class MainActivity : ComponentActivity() {
                 BridgeyApp(
                     discovery = discovery,
                     pairing = pairing,
+                    settings = bridgey.settings,
+                    onDeviceNameChanged = bridgey::updateDeviceName,
                     appNotificationsEnabled = appNotificationsEnabled,
                     notificationAccessEnabled = notificationAccessEnabled,
                     onTurnOff = {
@@ -169,6 +173,8 @@ private fun UnsupportedProfile() = Surface(Modifier.fillMaxSize()) {
 private fun BridgeyApp(
     discovery: NsdDiscoveryService,
     pairing: PairingCoordinator,
+    settings: BridgeySettings,
+    onDeviceNameChanged: (String) -> Unit,
     appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
     onTurnOff: () -> Unit,
@@ -183,7 +189,10 @@ private fun BridgeyApp(
     val fileTransfers by pairing.fileTransfers.collectAsStateWithLifecycle()
     val phoneRinging by pairing.phoneRinging.collectAsStateWithLifecycle()
     val macRinging by pairing.macRinging.collectAsStateWithLifecycle()
+    val trustedDevices by pairing.trustedDevices.collectAsStateWithLifecycle()
+    val settingsState by settings.state.collectAsStateWithLifecycle()
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
+    var showingSettings by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -195,32 +204,61 @@ private fun BridgeyApp(
                         Text("Your devices, together", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
+                actions = {
+                    TextButton(onClick = { showingSettings = !showingSettings }) {
+                        Text(if (showingSettings) "Done" else "Settings")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
-        DeviceScreen(
-            peers = peers,
-            trustedIds = trustedIds,
-            pairingState = pairingState,
-            clipboardStatus = clipboardStatus,
-            fileTransfers = fileTransfers,
-            phoneRinging = phoneRinging,
-            macRinging = macRinging,
-            pairing = pairing,
-            appNotificationsEnabled = appNotificationsEnabled,
-            notificationAccessEnabled = notificationAccessEnabled,
-            onAppNotifications = {
-                if (appNotificationsEnabled) onOpenAppNotificationSettings()
-                else permissionPrompt = PermissionPrompt.BridgeyNotifications
-            },
-            onNotificationForwarding = {
-                if (notificationAccessEnabled) onOpenNotificationAccessSettings()
-                else permissionPrompt = PermissionPrompt.NotificationForwarding
-            },
-            onTurnOff = onTurnOff,
-            modifier = Modifier.padding(padding),
-        )
+        if (showingSettings) {
+            SettingsScreen(
+                state = settingsState,
+                trustedDevices = trustedDevices,
+                onDeviceNameChanged = onDeviceNameChanged,
+                onGlobalFeatureChanged = { feature, enabled ->
+                    settings.setGlobal(feature, enabled)
+                    if (feature == BridgeyFeature.FIND_DEVICE && !enabled) pairing.stopFinding()
+                },
+                onDeviceFeatureChanged = { deviceId, feature, enabled ->
+                    settings.setForDevice(deviceId, feature, enabled)
+                    if (
+                        feature == BridgeyFeature.FIND_DEVICE && !enabled &&
+                        (pairingState as? PairingState.Connected)?.deviceId == deviceId
+                    ) pairing.stopFinding()
+                },
+                onForget = pairing::forget,
+                modifier = Modifier.padding(padding),
+            )
+        } else {
+            DeviceScreen(
+                peers = peers,
+                trustedIds = trustedIds,
+                pairingState = pairingState,
+                clipboardStatus = clipboardStatus,
+                fileTransfers = fileTransfers,
+                phoneRinging = phoneRinging,
+                macRinging = macRinging,
+                enabledFeatures = BridgeyFeature.entries.associateWith { feature ->
+                    settings.isEnabled(feature, (pairingState as? PairingState.Connected)?.deviceId)
+                },
+                pairing = pairing,
+                appNotificationsEnabled = appNotificationsEnabled,
+                notificationAccessEnabled = notificationAccessEnabled,
+                onAppNotifications = {
+                    if (appNotificationsEnabled) onOpenAppNotificationSettings()
+                    else permissionPrompt = PermissionPrompt.BridgeyNotifications
+                },
+                onNotificationForwarding = {
+                    if (notificationAccessEnabled) onOpenNotificationAccessSettings()
+                    else permissionPrompt = PermissionPrompt.NotificationForwarding
+                },
+                onTurnOff = onTurnOff,
+                modifier = Modifier.padding(padding),
+            )
+        }
     }
 
     when (val state = pairingState) {
@@ -271,6 +309,88 @@ private fun BridgeyApp(
 }
 
 @Composable
+private fun SettingsScreen(
+    state: BridgeySettingsState,
+    trustedDevices: List<TrustedDevice>,
+    onDeviceNameChanged: (String) -> Unit,
+    onGlobalFeatureChanged: (BridgeyFeature, Boolean) -> Unit,
+    onDeviceFeatureChanged: (String, BridgeyFeature, Boolean) -> Unit,
+    onForget: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var editedName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item { SectionTitle("This phone") }
+        item {
+            Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editedName,
+                        onValueChange = { editedName = it.take(64) },
+                        label = { Text("Device name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { onDeviceNameChanged(editedName) },
+                        enabled = editedName.trim().isNotEmpty() && editedName.trim() != state.deviceName,
+                    ) { Text("Save name") }
+                }
+            }
+        }
+
+        item { SectionTitle("Features") }
+        items(BridgeyFeature.entries, key = { it.key }) { feature ->
+            FeatureToggle(
+                title = feature.title,
+                enabled = state.globalFeatures[feature] != false,
+                onChanged = { onGlobalFeatureChanged(feature, it) },
+            )
+        }
+
+        item { SectionTitle("Paired devices") }
+        if (trustedDevices.isEmpty()) {
+            item { Text("No paired devices", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        items(trustedDevices, key = { it.id }) { device ->
+            Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(device.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(device.id.take(8), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    BridgeyFeature.entries.forEach { feature ->
+                        val globallyEnabled = state.globalFeatures[feature] != false
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(feature.title, modifier = Modifier.weight(1f), color = if (globallyEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Switch(
+                                checked = globallyEnabled && state.deviceFeatures[device.id]?.get(feature) != false,
+                                enabled = globallyEnabled,
+                                onCheckedChange = { onDeviceFeatureChanged(device.id, feature, it) },
+                            )
+                        }
+                    }
+                    TextButton(onClick = { onForget(device.id) }) { Text("Forget device", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(12.dp)) }
+    }
+}
+
+@Composable
+private fun FeatureToggle(title: String, enabled: Boolean, onChanged: (Boolean) -> Unit) {
+    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+            Switch(checked = enabled, onCheckedChange = onChanged)
+        }
+    }
+}
+
+@Composable
 private fun DeviceScreen(
     peers: List<DiscoveredPeer>,
     trustedIds: Set<String>,
@@ -279,6 +399,7 @@ private fun DeviceScreen(
     fileTransfers: Map<String, FileTransferState>,
     phoneRinging: Boolean,
     macRinging: Boolean,
+    enabledFeatures: Map<BridgeyFeature, Boolean>,
     pairing: PairingCoordinator,
     appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
@@ -301,6 +422,9 @@ private fun DeviceScreen(
                     clipboardStatus = clipboardStatus,
                     phoneRinging = phoneRinging,
                     macRinging = macRinging,
+                    clipboardEnabled = enabledFeatures[BridgeyFeature.CLIPBOARD] != false,
+                    filesEnabled = enabledFeatures[BridgeyFeature.FILES] != false,
+                    findEnabled = enabledFeatures[BridgeyFeature.FIND_DEVICE] != false,
                     onClipboard = pairing::sendClipboard,
                     onFile = { filePicker.launch(arrayOf("*/*")) },
                     onRing = pairing::findMac,
@@ -368,6 +492,9 @@ private fun ConnectedDeviceCard(
     clipboardStatus: String?,
     phoneRinging: Boolean,
     macRinging: Boolean,
+    clipboardEnabled: Boolean,
+    filesEnabled: Boolean,
+    findEnabled: Boolean,
     onClipboard: () -> Unit,
     onFile: () -> Unit,
     onRing: () -> Unit,
@@ -392,12 +519,13 @@ private fun ConnectedDeviceCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuickAction("Clipboard", "Copy", Modifier.weight(1f), onClipboard)
-                QuickAction("File", "Send", Modifier.weight(1f), onFile)
+                QuickAction("Clipboard", "Copy", Modifier.weight(1f), clipboardEnabled, onClipboard)
+                QuickAction("File", "Send", Modifier.weight(1f), filesEnabled, onFile)
                 QuickAction(
                     if (phoneRinging || macRinging) "Stop" else "Ring",
                     if (phoneRinging) "Phone" else "Mac",
                     Modifier.weight(1f),
+                    findEnabled,
                     if (phoneRinging || macRinging) onStopRing else onRing,
                 )
             }
@@ -407,11 +535,18 @@ private fun ConnectedDeviceCard(
 }
 
 @Composable
-private fun QuickAction(title: String, subtitle: String, modifier: Modifier, action: () -> Unit) {
-    Surface(onClick = action, modifier = modifier, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .86f)) {
+private fun QuickAction(title: String, subtitle: String, modifier: Modifier, enabled: Boolean, action: () -> Unit) {
+    Surface(
+        onClick = action,
+        enabled = enabled,
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = if (enabled) .86f else .42f),
+    ) {
         Column(Modifier.padding(vertical = 13.dp, horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
+            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, color = contentColor)
+            Text(if (enabled) subtitle else "Off", style = MaterialTheme.typography.labelSmall, color = contentColor)
         }
     }
 }

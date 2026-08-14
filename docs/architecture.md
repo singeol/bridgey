@@ -64,6 +64,11 @@ A plugin registers a capability string, message type prefix, lifecycle hooks,
 and handler. Plugins are independently enabled per paired device. Unknown
 capabilities and message types are ignored or answered with `unsupported_type`.
 
+The current clients persist a global feature policy plus per-device overrides.
+The global switch always takes precedence. Both outgoing commands and incoming
+side effects check the effective policy; active accepted file transfers are
+allowed to complete so changing a setting cannot strand a partial transfer.
+
 ## Connection lifecycle
 
 ```text
@@ -89,7 +94,8 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   automatic reads are offered only while the app is eligible, with explicit
   user actions otherwise.
 - **Files:** metadata is announced in JSON, then bytes are streamed in bounded
-  chunks. Receivers choose a destination before accepting. Hash verification,
+  chunks. macOS users choose a persistent receive directory; Android writes to
+  its scoped `Download/Bridgey` collection. Hash verification,
   progress, cancellation, and partial-file cleanup are mandatory.
 - **Notifications:** Android's `NotificationListenerService` emits sanitized
   metadata. Bridgey's own notifications and secret/silent categories are

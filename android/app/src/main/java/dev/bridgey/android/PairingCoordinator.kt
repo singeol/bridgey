@@ -70,6 +70,7 @@ sealed interface PairingState {
 enum class ClipboardSendResult {
     DELIVERED,
     EMPTY,
+    DISABLED,
     NOT_CONNECTED,
     CONNECTION_LOST,
     NO_ACKNOWLEDGEMENT,
@@ -83,11 +84,14 @@ data class FileTransferState(
     val progressPercent: Int?,
 )
 
+data class TrustedDevice(val id: String, val name: String)
+
 class PairingCoordinator(
     context: Context,
     private val localDeviceId: String,
-    private val localDeviceName: String,
+    localDeviceName: String,
     private val port: Int = 42_458,
+    private val settings: BridgeySettings,
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -96,6 +100,8 @@ class PairingCoordinator(
     private val identity = AndroidIdentity(context.applicationContext)
     private val trust = AndroidTrustRegistry(context.applicationContext)
     val trustedDeviceIds: StateFlow<Set<String>> = trust.trustedDeviceIds
+    val trustedDevices: StateFlow<List<TrustedDevice>> = trust.trustedDevices
+    @Volatile private var localDeviceName = localDeviceName
     private val mutableClipboardStatus = MutableStateFlow<String?>(null)
     val clipboardStatus: StateFlow<String?> = mutableClipboardStatus.asStateFlow()
     private val pendingClipboardSends = ConcurrentHashMap<String, (ClipboardSendResult) -> Unit>()
@@ -169,8 +175,17 @@ class PairingCoordinator(
 
     fun forget(deviceId: String) {
         trust.remove(deviceId)
+        settings.removeDevice(deviceId)
+        if ((mutableState.value as? PairingState.Connected)?.deviceId == deviceId) dismiss()
         android.util.Log.i("Bridgey", "PAIRING revoked peerId=${deviceId.take(8)}")
     }
+
+    fun updateDeviceName(value: String) {
+        localDeviceName = value.trim().take(64).ifBlank { "Android device" }
+    }
+
+    private fun featureEnabled(feature: BridgeyFeature, current: Session? = session): Boolean =
+        settings.isEnabled(feature, current?.remoteDeviceId?.takeIf(String::isNotEmpty))
 
     fun sendClipboard() {
         val clipboard = appContext.getSystemService(ClipboardManager::class.java)
@@ -183,6 +198,11 @@ class PairingCoordinator(
     }
 
     fun sendText(text: String, onResult: (ClipboardSendResult) -> Unit = {}) {
+        if (!featureEnabled(BridgeyFeature.CLIPBOARD)) {
+            mutableClipboardStatus.value = "Clipboard sharing is disabled in Settings"
+            onResult(ClipboardSendResult.DISABLED)
+            return
+        }
         if (text.isEmpty()) {
             mutableClipboardStatus.value = "Clipboard is empty"
             onResult(ClipboardSendResult.EMPTY)
@@ -237,6 +257,7 @@ class PairingCoordinator(
     }
 
     fun sendBattery(level: Int, isCharging: Boolean) {
+        if (!featureEnabled(BridgeyFeature.BATTERY)) return
         val connectedSession = session ?: return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch {
@@ -270,6 +291,7 @@ class PairingCoordinator(
         text: String,
         timestamp: Long,
     ) {
+        if (!featureEnabled(BridgeyFeature.NOTIFICATIONS)) return
         val connectedSession = session ?: return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch {
@@ -300,6 +322,7 @@ class PairingCoordinator(
     }
 
     fun findMac() {
+        if (!featureEnabled(BridgeyFeature.FIND_DEVICE)) return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch { sendFindCommand("find.start") }
     }
@@ -311,6 +334,7 @@ class PairingCoordinator(
 
     private fun sendFindCommand(kind: String): Boolean {
         val current = session ?: return false
+        if (kind == "find.start" && !settings.isEnabled(BridgeyFeature.FIND_DEVICE, current.remoteDeviceId)) return false
         if (mutableState.value !is PairingState.Connected) return false
         val payload = JSONObject().put("alertId", "active").toString().toByteArray()
         val encrypted = Crypto.encrypt(current.pairingKey!!, payload)
@@ -326,6 +350,7 @@ class PairingCoordinator(
     }
 
     private fun receiveFindCommand(current: Session, message: Message, start: Boolean) {
+        if (start && !settings.isEnabled(BridgeyFeature.FIND_DEVICE, current.remoteDeviceId)) return
         if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
         val messageId = message.messageId ?: return
         if (!current.acceptMessageId(messageId)) return
@@ -370,6 +395,10 @@ class PairingCoordinator(
     }
 
     fun sendFile(uri: Uri) {
+        if (!featureEnabled(BridgeyFeature.FILES)) {
+            mutableFileTransferStatus.value = "File transfer is disabled in Settings"
+            return
+        }
         val connectedSession = session
         if (connectedSession == null || mutableState.value !is PairingState.Connected) {
             mutableFileTransferStatus.value = "Not connected — file was not sent"
@@ -652,6 +681,7 @@ class PairingCoordinator(
             }
             "pairing.cancel" -> cancel()
             "clipboard.update" -> {
+                if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) return
                 if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
                 val messageId = message.messageId ?: return
                 if (!current.acceptMessageId(messageId)) return
@@ -679,7 +709,9 @@ class PairingCoordinator(
             "find.stopped" -> receiveFindAcknowledgement(current, message, started = false)
             "files.accept" -> message.transferId?.let { pendingFileAccepts.remove(it)?.complete(true) }
             "files.complete.ack" -> message.transferId?.let { pendingFileCompletions.remove(it)?.complete(true) }
-            "files.offer" -> receiveFileOffer(current, message)
+            "files.offer" -> if (settings.isEnabled(BridgeyFeature.FILES, current.remoteDeviceId)) receiveFileOffer(current, message)
+            // Once an offer has been accepted, let that transfer finish even if the
+            // setting changes. Disabling Files blocks the next offer instead.
             "files.chunk" -> receiveFileChunk(current, message)
             "files.complete" -> receiveFileComplete(current, message)
             "files.cancel" -> receiveFileCancel(message.transferId)
@@ -1239,6 +1271,8 @@ private class AndroidTrustRegistry(context: Context) {
     private val preferences = context.getSharedPreferences("bridgey.trust", Context.MODE_PRIVATE)
     private val mutableIds = MutableStateFlow(loadIds())
     val trustedDeviceIds: StateFlow<Set<String>> = mutableIds.asStateFlow()
+    private val mutableDevices = MutableStateFlow(loadDevices())
+    val trustedDevices: StateFlow<List<TrustedDevice>> = mutableDevices.asStateFlow()
 
     fun save(deviceId: String, name: String, identityKey: String) {
         preferences.edit()
@@ -1246,6 +1280,7 @@ private class AndroidTrustRegistry(context: Context) {
             .putString("peer.$deviceId.identityKey", identityKey)
             .apply()
         mutableIds.value = loadIds()
+        mutableDevices.value = loadDevices()
     }
 
     fun remove(deviceId: String) {
@@ -1254,6 +1289,7 @@ private class AndroidTrustRegistry(context: Context) {
             .remove("peer.$deviceId.identityKey")
             .apply()
         mutableIds.value = loadIds()
+        mutableDevices.value = loadDevices()
     }
 
     fun identityKey(deviceId: String): String? = preferences.getString("peer.$deviceId.identityKey", null)
@@ -1263,4 +1299,8 @@ private class AndroidTrustRegistry(context: Context) {
         .filter { it.startsWith("peer.") && it.endsWith(".identityKey") }
         .map { it.removePrefix("peer.").removeSuffix(".identityKey") }
         .toSet()
+
+    private fun loadDevices(): List<TrustedDevice> = loadIds().map { id ->
+        TrustedDevice(id, preferences.getString("peer.$id.name", null) ?: "Unknown device")
+    }.sortedBy { it.name.lowercase() }
 }

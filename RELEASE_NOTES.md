@@ -1,38 +1,43 @@
-# Bridgey v0.1.2
+# Bridgey v0.2.0
 
-Bridgey v0.1.2 makes platform permissions smaller, clearer, and explicitly
-controlled by the user. No account, cloud service, or internet connection is
-required for the core features.
+Bridgey v0.2.0 adds persistent, privacy-focused controls for every major
+feature on Android and macOS. Existing paired devices remain trusted when the
+new version is installed over v0.1.2.
 
-## Privacy and permissions
+## New settings
 
-- Removed unused Android network-state, Wi-Fi control, and vibration
-  permissions.
-- Bridgey no longer requests Android or macOS notification permission
-  automatically at startup.
-- Added separate, contextual controls for Bridgey system notifications and the
-  optional Android notification-forwarding access.
-- Added plain-language explanations before opening sensitive system permission
-  dialogs.
-- Added the required macOS local-network usage description and Bonjour service
-  declaration.
-- Documented every requested capability and added a test that prevents unused
-  Android permissions from returning unnoticed.
+- Enable or disable Clipboard, File transfer, Notification forwarding, Battery
+  status, and Find Device globally.
+- Override every feature independently for each trusted device.
+- Change the device name advertised on the local network.
+- Review paired devices and remove their trust records.
+- Choose the directory used for received files on macOS.
+- Start the macOS application automatically at login.
+- Settings persist across application and device restarts.
 
-## Included
+## Behavior and reliability
 
-- Automatic discovery of Android and macOS devices on the local network.
-- Explicit encrypted pairing with matching six-digit verification codes.
-- Automatic reconnect for previously trusted devices.
-- Text clipboard sharing in both directions.
-- Streaming file transfer in both directions with progress, speed, ETA,
-  integrity verification, and per-file cancellation.
-- Android notifications forwarded to native macOS notifications.
-- Android battery level and charging status displayed on macOS.
-- Find Device: ring Android from macOS or ring the Mac from Android, with
-  synchronized stopping.
-- Native Android foreground actions and a macOS global clipboard shortcut
-  (`Control–Option–C`).
+- Disabled features are blocked for both outgoing commands and incoming side
+  effects without disconnecting the secure session.
+- Disabled quick actions are clearly shown in the Android and macOS interfaces.
+- The Android foreground notification hides its clipboard action while
+  clipboard sharing is disabled.
+- Disabling Find Device stops an active alert and synchronizes the stopped state
+  with the paired device.
+- File transfers already accepted are allowed to finish when the Files setting
+  changes, preventing stranded partial transfers.
+- macOS now reports the actual selected destination after receiving a file.
+
+## Included functionality
+
+- Encrypted pairing and automatic reconnect over the local network.
+- Clipboard sharing in both directions.
+- Streaming file transfer with progress, speed, ETA, integrity verification,
+  and per-file cancellation.
+- Android notification forwarding and battery status on macOS.
+- Find Device in both directions.
+- Android notification actions and the macOS `Control–Option–C` clipboard
+  shortcut.
 
 ## Downloads
 
@@ -43,24 +48,18 @@ required for the core features.
 
 ## macOS installation note
 
-This release is ad-hoc signed because the project does not yet have a
-paid Apple Developer ID certificate. macOS may block the first launch.
-
-1. Copy Bridgey to Applications.
-2. Control-click Bridgey and choose **Open**.
-3. If macOS still blocks it, open **System Settings → Privacy & Security** and
-   choose **Open Anyway** for Bridgey.
-
-The source code and reproducible GitHub Actions build are public. Developer ID
-signing and notarization can be added to a future release without changing the
-application protocol.
+The macOS build remains ad-hoc signed because the project does not yet have a
+paid Apple Developer ID certificate. Copy Bridgey to Applications, then
+Control-click it and choose **Open**. If macOS still blocks it, use **System
+Settings → Privacy & Security → Open Anyway**.
 
 ## Known limitations
 
-- Both devices must currently be reachable on the same local network.
-- Android background clipboard restrictions require an explicit user action to
-  send the phone clipboard.
-- The macOS build is not notarized in v0.1.2.
+- Both devices must be reachable on the same local network.
+- Android requires an explicit user action to read and send its clipboard.
+- Android received files remain in `Download/Bridgey`; macOS received files use
+  the directory selected in Settings.
+- The macOS build is not notarized.
 - Linux support, notification actions, SMS, media control, and remote input are
   planned for later versions.
 

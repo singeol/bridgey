@@ -27,6 +27,11 @@ struct FileTransferRow: Identifiable, Equatable {
     let active: Bool
 }
 
+struct TrustedDeviceInfo: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
 private struct BatteryPayload: Codable {
     let level: Int
     let isCharging: Bool
@@ -82,8 +87,15 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var macRinging = false
     @Published private(set) var androidRinging = false
 
+    var trustedDevices: [TrustedDeviceInfo] {
+        trustedDeviceIDs.map { id in
+            TrustedDeviceInfo(id: id, name: UserDefaults.standard.string(forKey: "trusted.\(id).name") ?? "Unknown device")
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     private let deviceID: String
-    private let deviceName: String
+    private var deviceName: String
+    private let settings: BridgeySettings
     private let identity: MacIdentity
     private var listener: NWListener?
     private var session: Session?
@@ -102,9 +114,10 @@ final class PairingCoordinator: ObservableObject {
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
 
-    init(deviceID: String, deviceName: String) {
+    init(deviceID: String, deviceName: String, settings: BridgeySettings) {
         self.deviceID = deviceID
         self.deviceName = deviceName
+        self.settings = settings
         identity = MacIdentity()
         trustedDeviceIDs = Set(UserDefaults.standard.stringArray(forKey: "trustedDeviceIDs") ?? [])
         UNUserNotificationCenter.current().delegate = notificationPresenter
@@ -248,11 +261,26 @@ final class PairingCoordinator: ObservableObject {
         defaults.removeObject(forKey: "trusted.\(deviceID).name")
         trustedDeviceIDs.remove(deviceID)
         defaults.set(Array(trustedDeviceIDs), forKey: "trustedDeviceIDs")
+        settings.removeDevice(deviceID)
+        if case let .connected(connectedID, _) = state, connectedID == deviceID { dismiss() }
         NSLog("PAIRING revoked peerId=%@", String(deviceID.prefix(8)))
+    }
+
+    func updateDeviceName(_ value: String) {
+        deviceName = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+    }
+
+    private func featureEnabled(_ feature: BridgeyFeature, current: Session? = nil) -> Bool {
+        let id = (current ?? session)?.remoteDeviceID
+        return settings.isEnabled(feature, for: id?.isEmpty == false ? id : nil)
     }
 
     func sendClipboard() {
         guard let current = session, case .connected = state else { return }
+        guard featureEnabled(.clipboard, current: current) else {
+            clipboardStatus = "Clipboard sharing is disabled in Settings"
+            return
+        }
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
             clipboardStatus = "Clipboard is empty or unavailable"
             return
@@ -283,6 +311,7 @@ final class PairingCoordinator: ObservableObject {
 
     private func sendFindCommand(kind: String) -> Bool {
         guard let current = session, case .connected = state,
+              (kind != "find.start" || featureEnabled(.findDevice, current: current)),
               let payload = try? JSONEncoder().encode(FindDevicePayload(alertId: "active")),
               let encrypted = try? encrypt(payload, key: current.pairingKey!) else { return false }
         current.send(PairingMessage(
@@ -296,6 +325,7 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func receiveFindCommand(_ message: PairingMessage, in current: Session, start: Bool) throws {
+        if start && !featureEnabled(.findDevice, current: current) { return }
         guard case .connected = state,
               message.sessionId == current.id,
               let messageID = message.messageId,
@@ -351,6 +381,10 @@ final class PairingCoordinator: ObservableObject {
     func chooseAndSendFile() {
         guard session != nil, case .connected = state else {
             fileTransferStatus = "Not connected — file was not sent"
+            return
+        }
+        guard featureEnabled(.files) else {
+            fileTransferStatus = "File transfer is disabled in Settings"
             return
         }
         // MenuBarExtra closes its transient window after invoking the action.
@@ -587,6 +621,7 @@ final class PairingCoordinator: ObservableObject {
             case "pairing.cancel":
                 cancel()
             case "clipboard.update":
+                guard featureEnabled(.clipboard, current: current) else { return }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -613,6 +648,7 @@ final class PairingCoordinator: ObservableObject {
             case "find.stopped":
                 try receiveFindAcknowledgement(message, in: current, started: false)
             case "battery.update":
+                guard featureEnabled(.battery, current: current) else { return }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -627,6 +663,7 @@ final class PairingCoordinator: ObservableObject {
                 remoteBattery = RemoteBatteryStatus(level: payload.level, isCharging: payload.isCharging)
                 NSLog("PLUGIN battery received level=%d charging=%@", payload.level, String(payload.isCharging))
             case "notifications.post":
+                guard featureEnabled(.notifications, current: current) else { return }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -642,6 +679,7 @@ final class PairingCoordinator: ObservableObject {
                 }
                 postNotification(payload)
             case "files.offer":
+                guard featureEnabled(.files, current: current) else { return }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -658,7 +696,7 @@ final class PairingCoordinator: ObservableObject {
                     throw PairingError.invalidMessage
                 }
                 guard incomingFiles[offer.transferId] == nil else { throw PairingError.invalidMessage }
-                let transfer = try IncomingFileTransfer(offer: offer)
+                let transfer = try IncomingFileTransfer(offer: offer, directoryAccess: settings.receiveDirectoryAccess())
                 incomingFiles[offer.transferId] = transfer
                 fileOperationID = UUID()
                 beginFileTransferUI()
@@ -708,7 +746,8 @@ final class PairingCoordinator: ObservableObject {
                 }
                 do {
                     let destination = try transfer.finish(expectedHash: completion.sha256)
-                    fileTransferStatus = "Saved \(transfer.displayName) to Downloads/Bridgey"
+                    let folder = destination.deletingLastPathComponent().path
+                    fileTransferStatus = "Saved \(transfer.displayName) to \(folder)"
                     updateFileTransfer(id: completion.transferId, name: transfer.displayName, status: fileTransferStatus!, active: false)
                     fileTransferActive = false
                     fileOperationID = nil
@@ -1254,6 +1293,7 @@ private final class IncomingFileTransfer {
     private let partialURL: URL
     private let finalURL: URL
     private let handle: FileHandle
+    private let directoryAccess: ReceiveDirectoryAccess
     private var hasher = SHA256()
     private(set) var receivedSize: Int64 = 0
     private var nextSequence: Int64 = 0
@@ -1261,13 +1301,13 @@ private final class IncomingFileTransfer {
     private var lastProgressBytes: Int64 = 0
     private var smoothedBytesPerSecond = 0.0
 
-    init(offer: FileOfferPayload) throws {
+    init(offer: FileOfferPayload, directoryAccess: ReceiveDirectoryAccess) throws {
         expectedSize = offer.size
         expectedHash = offer.sha256
+        self.directoryAccess = directoryAccess
         let sanitized = Self.sanitize(offer.name)
         displayName = sanitized
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-        let directory = downloads.appendingPathComponent("Bridgey", isDirectory: true)
+        let directory = directoryAccess.url
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         finalURL = Self.uniqueURL(directory.appendingPathComponent(sanitized))
         partialURL = finalURL.appendingPathExtension("bridgey-part")

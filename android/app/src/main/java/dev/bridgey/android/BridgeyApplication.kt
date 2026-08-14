@@ -24,6 +24,8 @@ class BridgeyApplication : Application() {
         private set
     lateinit var discovery: NsdDiscoveryService
         private set
+    lateinit var settings: BridgeySettings
+        private set
     var isBridgeyEnabled: Boolean = false
         private set
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -45,8 +47,10 @@ class BridgeyApplication : Application() {
         val deviceId = preferences.getString("device_id", null) ?: UUID.randomUUID().toString().also {
             preferences.edit().putString("device_id", it).apply()
         }
-        val deviceName = Settings.Global.getString(contentResolver, "device_name") ?: "Android device"
-        pairing = PairingCoordinator(this, deviceId, deviceName)
+        val systemDeviceName = Settings.Global.getString(contentResolver, "device_name") ?: "Android device"
+        settings = BridgeySettings(this, systemDeviceName)
+        val deviceName = settings.state.value.deviceName
+        pairing = PairingCoordinator(this, deviceId, deviceName, settings = settings)
         discovery = NsdDiscoveryService(this, LocalDiscoveryIdentity(deviceId, deviceName))
         applicationScope.launch {
             combine(discovery.peers, pairing.trustedDeviceIds, pairing.state) { peers, trustedIds, state ->
@@ -92,6 +96,13 @@ class BridgeyApplication : Application() {
         }
         discovery.stop()
         pairing.pause()
+    }
+
+    fun updateDeviceName(value: String) {
+        settings.setDeviceName(value)
+        val name = settings.state.value.deviceName
+        pairing.updateDeviceName(name)
+        discovery.updateDeviceName(name)
     }
 
     private fun publishBattery(intent: Intent) {

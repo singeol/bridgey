@@ -73,6 +73,11 @@ class BridgeyConnectionService : Service() {
                 notificationManager.notify(NOTIFICATION_ID, buildNotification(lastStatus))
             }
         }
+        serviceScope.launch {
+            bridgey.settings.state.collect {
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(lastStatus))
+            }
+        }
         serviceScope.launch { bridgey.pairing.fileTransfers.collect(::updateTransferNotifications) }
         serviceScope.launch {
             bridgey.pairing.phoneRinging.collect { ringing ->
@@ -181,10 +186,14 @@ class BridgeyConnectionService : Service() {
             .setDeleteIntent(restoreNotification)
             .setAutoCancel(false)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_menu_send, "Send clipboard", pendingCapture)
+        val pairing = (application as BridgeyApplication).pairing
+        val connectedDeviceId = (pairing.state.value as? PairingState.Connected)?.deviceId
+        if ((application as BridgeyApplication).settings.isEnabled(BridgeyFeature.CLIPBOARD, connectedDeviceId)) {
+            notification.addAction(android.R.drawable.ic_menu_send, "Send clipboard", pendingCapture)
+        }
+        return notification
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Turn off", turnOff)
             .build()
-        return notification
     }
 
     private fun buildFindNotification(): android.app.Notification {
@@ -277,6 +286,7 @@ class ClipboardCaptureActivity : Activity() {
                         val message = when (result) {
                             ClipboardSendResult.DELIVERED -> "Clipboard sent to Mac"
                             ClipboardSendResult.EMPTY -> "Clipboard is empty"
+                            ClipboardSendResult.DISABLED -> "Clipboard sharing is disabled in Settings"
                             ClipboardSendResult.NOT_CONNECTED -> "Not connected — clipboard not sent"
                             ClipboardSendResult.CONNECTION_LOST -> "Send failed — connection lost"
                             ClipboardSendResult.NO_ACKNOWLEDGEMENT -> "Mac did not confirm delivery"

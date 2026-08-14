@@ -5,24 +5,27 @@ import SwiftUI
 struct BridgeyApp: App {
     @StateObject private var discovery: BonjourDiscovery
     @StateObject private var pairing: PairingCoordinator
+    @StateObject private var settings: BridgeySettings
 
     init() {
         LegacyPreferences.migrateIfNeeded()
-        let discovery = BonjourDiscovery()
+        let settings = BridgeySettings()
+        _settings = StateObject(wrappedValue: settings)
+        let discovery = BonjourDiscovery(deviceName: settings.deviceName)
         _discovery = StateObject(wrappedValue: discovery)
-        let pairing = PairingCoordinator(deviceID: discovery.localDeviceID, deviceName: discovery.localDeviceName)
+        let pairing = PairingCoordinator(deviceID: discovery.localDeviceID, deviceName: discovery.localDeviceName, settings: settings)
         pairing.observe(discovery)
         _pairing = StateObject(wrappedValue: pairing)
     }
 
     var body: some Scene {
         MenuBarExtra("Bridgey", systemImage: menuBarSymbol) {
-            BridgeyPanel(discovery: discovery, pairing: pairing)
+            BridgeyPanel(discovery: discovery, pairing: pairing, settings: settings)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView(pairing: pairing)
+            SettingsView(discovery: discovery, pairing: pairing, settings: settings)
         }
     }
 
@@ -35,6 +38,7 @@ struct BridgeyApp: App {
 private struct BridgeyPanel: View {
     @ObservedObject var discovery: BonjourDiscovery
     @ObservedObject var pairing: PairingCoordinator
+    @ObservedObject var settings: BridgeySettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -114,7 +118,7 @@ private struct BridgeyPanel: View {
                 .frame(width: 46, height: 46)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.headline).lineLimit(1)
-                    if let battery = pairing.remoteBattery {
+                    if settings.isEnabled(.battery, for: connectedDeviceID), let battery = pairing.remoteBattery {
                         Label(
                             "\(battery.level)%\(battery.isCharging ? " · Charging" : "")",
                             systemImage: battery.isCharging ? "battery.100percent.bolt" : batterySymbol(battery.level)
@@ -134,11 +138,20 @@ private struct BridgeyPanel: View {
             }
 
             HStack(spacing: 8) {
-                actionButton("Clipboard", icon: "doc.on.clipboard") { pairing.sendClipboard() }
-                actionButton("File", icon: "paperplane") { pairing.chooseAndSendFile() }
+                actionButton(
+                    "Clipboard",
+                    icon: "doc.on.clipboard",
+                    enabled: settings.isEnabled(.clipboard, for: connectedDeviceID)
+                ) { pairing.sendClipboard() }
+                actionButton(
+                    "File",
+                    icon: "paperplane",
+                    enabled: settings.isEnabled(.files, for: connectedDeviceID)
+                ) { pairing.chooseAndSendFile() }
                 actionButton(
                     pairing.macRinging || pairing.androidRinging ? "Stop" : "Ring",
-                    icon: pairing.macRinging || pairing.androidRinging ? "stop.circle" : "bell"
+                    icon: pairing.macRinging || pairing.androidRinging ? "stop.circle" : "bell",
+                    enabled: settings.isEnabled(.findDevice, for: connectedDeviceID)
                 ) {
                     if pairing.macRinging || pairing.androidRinging { pairing.stopFinding() }
                     else { pairing.findAndroid() }
@@ -150,7 +163,7 @@ private struct BridgeyPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if !pairing.notificationsAuthorized {
+            if settings.isEnabled(.notifications, for: connectedDeviceID) && !pairing.notificationsAuthorized {
                 Button { pairing.enableNotifications() } label: {
                     Label(
                         pairing.notificationPermissionDetermined ? "Open notification settings" : "Enable Mac notifications",
@@ -166,7 +179,12 @@ private struct BridgeyPanel: View {
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private var connectedDeviceID: String? {
+        if case let .connected(deviceID, _) = pairing.state { return deviceID }
+        return nil
+    }
+
+    private func actionButton(_ title: String, icon: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 16, weight: .medium))
@@ -177,6 +195,8 @@ private struct BridgeyPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
         .background(.background.opacity(0.8), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
@@ -264,36 +284,83 @@ private struct BridgeyPanel: View {
 }
 
 private struct SettingsView: View {
+    @ObservedObject var discovery: BonjourDiscovery
     @ObservedObject var pairing: PairingCoordinator
+    @ObservedObject var settings: BridgeySettings
+    @State private var editedName = ""
 
     var body: some View {
         Form {
             Section("Bridgey") {
-                LabeledContent("Device", value: Host.current().localizedName ?? "Mac")
+                HStack {
+                    TextField("Device name", text: $editedName)
+                    Button("Save") {
+                        settings.setDeviceName(editedName)
+                        pairing.updateDeviceName(settings.deviceName)
+                        discovery.updateDeviceName(settings.deviceName)
+                    }
+                    .disabled(editedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || editedName == settings.deviceName)
+                }
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development")
+                Toggle("Launch at login", isOn: Binding(
+                    get: { settings.launchAtLogin },
+                    set: { settings.setLaunchAtLogin($0) }
+                ))
+                if let message = settings.loginItemMessage { Text(message).font(.caption).foregroundStyle(.red) }
+                HStack {
+                    LabeledContent("Received files", value: settings.receiveFolderPath)
+                    Button("Choose…") { settings.chooseReceiveFolder() }
+                }
             }
             Section("Features") {
-                Label("Clipboard sharing", systemImage: "doc.on.clipboard")
-                Label("File transfer", systemImage: "arrow.left.arrow.right")
-                HStack {
-                    Label("Android notifications", systemImage: "bell")
-                    Spacer()
-                    if pairing.notificationsAuthorized {
-                        Text("Enabled").foregroundStyle(.secondary)
-                    } else {
-                        Button(pairing.notificationPermissionDetermined ? "Settings" : "Enable") {
-                            pairing.enableNotifications()
+                ForEach(BridgeyFeature.allCases) { feature in
+                    Toggle(feature.title, isOn: Binding(
+                        get: { settings.globalFeatures[feature] != false },
+                        set: {
+                            settings.setGlobal(feature, enabled: $0)
+                            if feature == .findDevice && !$0 { pairing.stopFinding() }
                         }
+                    ))
+                }
+                if settings.globalFeatures[.notifications] != false && !pairing.notificationsAuthorized {
+                    Button(pairing.notificationPermissionDetermined ? "Open notification settings" : "Enable Mac notifications") {
+                        pairing.enableNotifications()
                     }
                 }
-                Label("Find device", systemImage: "location.magnifyingglass")
+            }
+            Section("Paired devices") {
+                if pairing.trustedDevices.isEmpty { Text("No paired devices").foregroundStyle(.secondary) }
+                ForEach(pairing.trustedDevices) { device in
+                    DisclosureGroup(device.name) {
+                        ForEach(BridgeyFeature.allCases) { feature in
+                            Toggle(feature.title, isOn: Binding(
+                                get: {
+                                    settings.globalFeatures[feature] != false &&
+                                        settings.deviceFeatures[device.id]?[feature] != false
+                                },
+                                set: {
+                                    settings.setForDevice(device.id, feature: feature, enabled: $0)
+                                    if feature == .findDevice && !$0,
+                                       case let .connected(connectedID, _) = pairing.state,
+                                       connectedID == device.id { pairing.stopFinding() }
+                                }
+                            ))
+                            .disabled(settings.globalFeatures[feature] == false)
+                        }
+                        Button("Forget device", role: .destructive) { pairing.forget(deviceID: device.id) }
+                    }
+                }
             }
             Text("Bridgey communicates directly over your local network. Clipboard, files, and notification content are encrypted in transit.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding(10)
-        .frame(width: 480, height: 360)
-        .onAppear { pairing.refreshNotificationAuthorization() }
+        .frame(width: 560, height: 620)
+        .onAppear {
+            editedName = settings.deviceName
+            pairing.refreshNotificationAuthorization()
+            settings.refreshLoginItemStatus()
+        }
     }
 }

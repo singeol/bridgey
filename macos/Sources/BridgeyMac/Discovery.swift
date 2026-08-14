@@ -76,12 +76,12 @@ final class BonjourDiscovery: NSObject, ObservableObject {
     private var services: [String: NetService] = [:]
     private var isRunning = false
     private let deviceID: String
-    private let deviceName: String
+    private var deviceName: String
     var localDeviceID: String { deviceID }
     var localDeviceName: String { deviceName }
     private lazy var ownServiceName = "Bridgey-\(deviceID.prefix(8))"
 
-    override init() {
+    init(deviceName preferredName: String? = nil) {
         let defaults = UserDefaults.standard
         if let stored = defaults.string(forKey: "deviceID"), UUID(uuidString: stored) != nil {
             deviceID = stored
@@ -89,10 +89,19 @@ final class BonjourDiscovery: NSObject, ObservableObject {
             deviceID = UUID().uuidString.lowercased()
             defaults.set(deviceID, forKey: "deviceID")
         }
-        deviceName = Host.current().localizedName ?? "Mac"
+        deviceName = preferredName ?? Host.current().localizedName ?? "Mac"
         super.init()
         browser.delegate = self
         start()
+    }
+
+    func updateDeviceName(_ value: String) {
+        let name = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+        guard !name.isEmpty, name != deviceName else { return }
+        let restart = isRunning
+        if restart { stop() }
+        deviceName = name
+        if restart { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.start() } }
     }
 
     func start() {

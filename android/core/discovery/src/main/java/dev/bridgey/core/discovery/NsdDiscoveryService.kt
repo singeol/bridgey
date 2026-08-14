@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class NsdDiscoveryService(
     context: Context,
-    private val identity: LocalDiscoveryIdentity,
+    private var identity: LocalDiscoveryIdentity,
     private val servicePort: Int = DEFAULT_PORT,
 ) : DiscoveryService {
     private val nsd = context.applicationContext.getSystemService(NsdManager::class.java)
@@ -90,6 +90,18 @@ class NsdDiscoveryService(
         runCatching { nsd.unregisterService(registrationListener) }
         found.clear()
         emitPeers()
+    }
+
+    @Synchronized
+    fun updateDeviceName(value: String) {
+        val name = value.trim().take(64).ifBlank { "Android device" }
+        if (name == identity.deviceName) return
+        val restart = running
+        if (restart) stop()
+        identity = identity.copy(deviceName = name)
+        if (restart) {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ start() }, 300)
+        }
     }
 
     @Suppress("DEPRECATION")

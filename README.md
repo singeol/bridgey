@@ -5,7 +5,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.1.2. Android and macOS clients support
+> Project status: v0.2.0. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, and Find Device over the
 > local network. Discovery data is intentionally treated as untrusted.
@@ -114,6 +114,23 @@ Bridgey asks for access only when the related feature needs it:
 Bridgey does not request location, contacts, camera, microphone, screen
 recording, Accessibility, Input Monitoring, or Full Disk Access. Permission
 denial disables only the corresponding optional integration.
+
+## Settings
+
+Open **Settings** on Android or the gear menu on macOS to:
+
+- change the name advertised to nearby Bridgey devices;
+- enable Clipboard, File transfer, Notification forwarding, Battery status,
+  and Find Device globally;
+- override those features for each trusted device or forget its trust record;
+- choose the macOS folder used for received files;
+- start the macOS app automatically at login.
+
+Feature switches are local policy: disabling a feature blocks new outgoing and
+incoming operations on that client. A file transfer already accepted is allowed
+to finish, while disabling Find Device stops a currently playing alert. Android
+received files remain in `Download/Bridgey`; this uses scoped `MediaStore`
+access and avoids requesting broad storage permission.
 
 ## Development principles
 
