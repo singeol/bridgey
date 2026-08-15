@@ -170,7 +170,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
         } else {
-            getParcelableArrayListExtra(Intent.EXTRA_STREAM).orEmpty()
+            getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
         }
 
     private fun refreshPermissionState() {
