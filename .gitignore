@@ -7,6 +7,8 @@ xcuserdata/
 macos/.build/
 macos/dist/
 macos/Resources/Bridgey.tiff
+__pycache__/
+*.pyc
 
 # Android / Gradle
 .gradle/

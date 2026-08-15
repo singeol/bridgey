@@ -190,6 +190,7 @@ private fun BridgeyApp(
     val phoneRinging by pairing.phoneRinging.collectAsStateWithLifecycle()
     val macRinging by pairing.macRinging.collectAsStateWithLifecycle()
     val trustedDevices by pairing.trustedDevices.collectAsStateWithLifecycle()
+    val remoteFeatures by pairing.remoteFeatures.collectAsStateWithLifecycle()
     val settingsState by settings.state.collectAsStateWithLifecycle()
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
     var showingSettings by remember { mutableStateOf(false) }
@@ -217,6 +218,8 @@ private fun BridgeyApp(
             SettingsScreen(
                 state = settingsState,
                 trustedDevices = trustedDevices,
+                connectedDeviceId = (pairingState as? PairingState.Connected)?.deviceId,
+                remoteFeatures = remoteFeatures,
                 onDeviceNameChanged = onDeviceNameChanged,
                 onGlobalFeatureChanged = { feature, enabled ->
                     settings.setGlobal(feature, enabled)
@@ -242,7 +245,8 @@ private fun BridgeyApp(
                 phoneRinging = phoneRinging,
                 macRinging = macRinging,
                 enabledFeatures = BridgeyFeature.entries.associateWith { feature ->
-                    settings.isEnabled(feature, (pairingState as? PairingState.Connected)?.deviceId)
+                    settings.isEnabled(feature, (pairingState as? PairingState.Connected)?.deviceId) &&
+                        remoteFeatures[feature] != false
                 },
                 pairing = pairing,
                 appNotificationsEnabled = appNotificationsEnabled,
@@ -312,6 +316,8 @@ private fun BridgeyApp(
 private fun SettingsScreen(
     state: BridgeySettingsState,
     trustedDevices: List<TrustedDevice>,
+    connectedDeviceId: String?,
+    remoteFeatures: Map<BridgeyFeature, Boolean>,
     onDeviceNameChanged: (String) -> Unit,
     onGlobalFeatureChanged: (BridgeyFeature, Boolean) -> Unit,
     onDeviceFeatureChanged: (String, BridgeyFeature, Boolean) -> Unit,
@@ -343,7 +349,14 @@ private fun SettingsScreen(
             }
         }
 
-        item { SectionTitle("Features") }
+        item { SectionTitle("Features on this phone") }
+        item {
+            Text(
+                "These switches control what this phone shares with every paired device. Changes appear on a connected device immediately.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         items(BridgeyFeature.entries, key = { it.key }) { feature ->
             FeatureToggle(
                 title = feature.title,
@@ -361,10 +374,17 @@ private fun SettingsScreen(
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(device.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(device.id.take(8), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Choose what this phone may use with this device.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BridgeyFeature.entries.forEach { feature ->
                         val globallyEnabled = state.globalFeatures[feature] != false
+                        val disabledRemotely = device.id == connectedDeviceId && remoteFeatures[feature] == false
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text(feature.title, modifier = Modifier.weight(1f), color = if (globallyEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(Modifier.weight(1f)) {
+                                Text(feature.title, color = if (globallyEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (disabledRemotely) {
+                                    Text("Off on ${device.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                                }
+                            }
                             Switch(
                                 checked = globallyEnabled && state.deviceFeatures[device.id]?.get(feature) != false,
                                 enabled = globallyEnabled,
@@ -460,14 +480,16 @@ private fun DeviceScreen(
                 onClick = onAppNotifications,
             )
         }
-        item {
-            ServiceCard(
-                enabled = notificationAccessEnabled,
-                title = "Notification forwarding",
-                detail = if (notificationAccessEnabled) "Android notifications appear on your Mac" else "Permission is required to forward notifications",
-                action = if (notificationAccessEnabled) "Manage" else "Enable",
-                onClick = onNotificationForwarding,
-            )
+        if (enabledFeatures[BridgeyFeature.NOTIFICATIONS] != false) {
+            item {
+                ServiceCard(
+                    enabled = notificationAccessEnabled,
+                    title = "Notification forwarding",
+                    detail = if (notificationAccessEnabled) "Android notifications appear on your Mac" else "Permission is required to forward notifications",
+                    action = if (notificationAccessEnabled) "Manage" else "Enable",
+                    onClick = onNotificationForwarding,
+                )
+            }
         }
 
         if (connected != null && connected.deviceId in trustedIds) {
@@ -519,15 +541,19 @@ private fun ConnectedDeviceCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuickAction("Clipboard", "Copy", Modifier.weight(1f), clipboardEnabled, onClipboard)
-                QuickAction("File", "Send", Modifier.weight(1f), filesEnabled, onFile)
-                QuickAction(
-                    if (phoneRinging || macRinging) "Stop" else "Ring",
-                    if (phoneRinging) "Phone" else "Mac",
-                    Modifier.weight(1f),
-                    findEnabled,
-                    if (phoneRinging || macRinging) onStopRing else onRing,
-                )
+                if (clipboardEnabled) QuickAction("Clipboard", "Copy", Modifier.weight(1f), onClipboard)
+                if (filesEnabled) QuickAction("File", "Send", Modifier.weight(1f), onFile)
+                if (findEnabled) {
+                    QuickAction(
+                        if (phoneRinging || macRinging) "Stop" else "Ring",
+                        if (phoneRinging) "Phone" else "Mac",
+                        Modifier.weight(1f),
+                        if (phoneRinging || macRinging) onStopRing else onRing,
+                    )
+                }
+            }
+            if (!clipboardEnabled && !filesEnabled && !findEnabled) {
+                Text("Quick actions are turned off in Settings on one of your devices.", style = MaterialTheme.typography.bodySmall)
             }
             clipboardStatus?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f)) }
         }
@@ -535,18 +561,16 @@ private fun ConnectedDeviceCard(
 }
 
 @Composable
-private fun QuickAction(title: String, subtitle: String, modifier: Modifier, enabled: Boolean, action: () -> Unit) {
+private fun QuickAction(title: String, subtitle: String, modifier: Modifier, action: () -> Unit) {
     Surface(
         onClick = action,
-        enabled = enabled,
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = if (enabled) .86f else .42f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = .86f),
     ) {
         Column(Modifier.padding(vertical = 13.dp, horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            val contentColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
-            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, color = contentColor)
-            Text(if (enabled) subtitle else "Off", style = MaterialTheme.typography.labelSmall, color = contentColor)
+            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

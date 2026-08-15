@@ -117,6 +117,8 @@ class PairingCoordinator(
     val phoneRinging: StateFlow<Boolean> = mutablePhoneRinging.asStateFlow()
     private val mutableMacRinging = MutableStateFlow(false)
     val macRinging: StateFlow<Boolean> = mutableMacRinging.asStateFlow()
+    private val mutableRemoteFeatures = MutableStateFlow(defaultFeatureState())
+    val remoteFeatures: StateFlow<Map<BridgeyFeature, Boolean>> = mutableRemoteFeatures.asStateFlow()
     private val incomingFiles = ConcurrentHashMap<String, IncomingFileTransfer>()
     private val cancelledTransferIds = ConcurrentHashMap.newKeySet<String>()
     private val outgoingFileJobs = ConcurrentHashMap<String, Job>()
@@ -125,6 +127,15 @@ class PairingCoordinator(
     private var session: Session? = null
     private var acceptJob: Job? = null
     private var findRingtone: Ringtone? = null
+
+    init {
+        scope.launch {
+            settings.state.collect {
+                if (!featureEnabled(BridgeyFeature.CLIPBOARD)) mutableClipboardStatus.value = null
+                sendFeatureState()
+            }
+        }
+    }
 
     fun start() {
         if (acceptJob != null) return
@@ -161,6 +172,7 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
 
@@ -170,6 +182,7 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
 
@@ -187,6 +200,9 @@ class PairingCoordinator(
     private fun featureEnabled(feature: BridgeyFeature, current: Session? = session): Boolean =
         settings.isEnabled(feature, current?.remoteDeviceId?.takeIf(String::isNotEmpty))
 
+    fun isFeatureAvailable(feature: BridgeyFeature): Boolean =
+        effectiveFeatureAvailable(featureEnabled(feature), mutableRemoteFeatures.value[feature] != false)
+
     fun sendClipboard() {
         val clipboard = appContext.getSystemService(ClipboardManager::class.java)
         val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(appContext)?.toString()
@@ -198,8 +214,8 @@ class PairingCoordinator(
     }
 
     fun sendText(text: String, onResult: (ClipboardSendResult) -> Unit = {}) {
-        if (!featureEnabled(BridgeyFeature.CLIPBOARD)) {
-            mutableClipboardStatus.value = "Clipboard sharing is disabled in Settings"
+        if (!isFeatureAvailable(BridgeyFeature.CLIPBOARD)) {
+            mutableClipboardStatus.value = "Clipboard is turned off on one of your devices"
             onResult(ClipboardSendResult.DISABLED)
             return
         }
@@ -257,7 +273,7 @@ class PairingCoordinator(
     }
 
     fun sendBattery(level: Int, isCharging: Boolean) {
-        if (!featureEnabled(BridgeyFeature.BATTERY)) return
+        if (!isFeatureAvailable(BridgeyFeature.BATTERY)) return
         val connectedSession = session ?: return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch {
@@ -291,7 +307,7 @@ class PairingCoordinator(
         text: String,
         timestamp: Long,
     ) {
-        if (!featureEnabled(BridgeyFeature.NOTIFICATIONS)) return
+        if (!isFeatureAvailable(BridgeyFeature.NOTIFICATIONS)) return
         val connectedSession = session ?: return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch {
@@ -322,7 +338,7 @@ class PairingCoordinator(
     }
 
     fun findMac() {
-        if (!featureEnabled(BridgeyFeature.FIND_DEVICE)) return
+        if (!isFeatureAvailable(BridgeyFeature.FIND_DEVICE)) return
         if (mutableState.value !is PairingState.Connected) return
         scope.launch { sendFindCommand("find.start") }
     }
@@ -334,7 +350,7 @@ class PairingCoordinator(
 
     private fun sendFindCommand(kind: String): Boolean {
         val current = session ?: return false
-        if (kind == "find.start" && !settings.isEnabled(BridgeyFeature.FIND_DEVICE, current.remoteDeviceId)) return false
+        if (kind == "find.start" && !isFeatureAvailable(BridgeyFeature.FIND_DEVICE)) return false
         if (mutableState.value !is PairingState.Connected) return false
         val payload = JSONObject().put("alertId", "active").toString().toByteArray()
         val encrypted = Crypto.encrypt(current.pairingKey!!, payload)
@@ -395,8 +411,8 @@ class PairingCoordinator(
     }
 
     fun sendFile(uri: Uri) {
-        if (!featureEnabled(BridgeyFeature.FILES)) {
-            mutableFileTransferStatus.value = "File transfer is disabled in Settings"
+        if (!isFeatureAvailable(BridgeyFeature.FILES)) {
+            mutableFileTransferStatus.value = "File transfer is turned off on one of your devices"
             return
         }
         val connectedSession = session
@@ -567,6 +583,7 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteFeatures.value = defaultFeatureState()
         server?.close()
         server = null
         acceptJob?.cancel()
@@ -589,6 +606,7 @@ class PairingCoordinator(
         val current = Session(socket)
         current.initiatedLocally = initiatedLocally
         session = current
+        mutableRemoteFeatures.value = defaultFeatureState()
         if (initiatedLocally) {
             current.peerName = peerHint ?: "Mac"
             current.keyPair = Crypto.generateKeyPair()
@@ -615,6 +633,7 @@ class PairingCoordinator(
             cancelIncomingFiles()
             stopPhoneRinging()
             mutableMacRinging.value = false
+            mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
             android.util.Log.i("Bridgey", "TRANSPORT disconnected")
         } else if (session === current) {
@@ -680,6 +699,7 @@ class PairingCoordinator(
                 completeIfConfirmed(current)
             }
             "pairing.cancel" -> cancel()
+            "features.update" -> receiveFeatureState(current, message)
             "clipboard.update" -> {
                 if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) return
                 if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
@@ -754,6 +774,9 @@ class PairingCoordinator(
             runCatching { Base64.decode(hash, Base64.DEFAULT).size == 32 }.getOrDefault(false).not() ||
             incomingFiles.containsKey(transferId)
         ) return fail("Invalid file offer")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return fail("Receiving files requires Android 10 or newer")
+        }
         val transfer = runCatching {
             IncomingFileTransfer(appContext, transferId, name, mimeType, size, hash)
         }.getOrElse { return fail("Could not create file in Downloads") }
@@ -897,7 +920,57 @@ class PairingCoordinator(
         if (current.localConfirmed && current.remoteConfirmed) {
             trust.save(current.remoteDeviceId, current.peerName, current.remoteIdentityKey!!)
             mutableState.value = PairingState.Connected(current.remoteDeviceId, current.peerName)
+            sendFeatureState()
             android.util.Log.i("Bridgey", "PAIRING verified peer=${current.peerName}")
+        }
+    }
+
+    private fun sendFeatureState() {
+        val current = session ?: return
+        if (mutableState.value !is PairingState.Connected || current.pairingKey == null) return
+        val featureValues = JSONObject()
+        BridgeyFeature.entries.forEach { feature ->
+            featureValues.put(feature.key, settings.isEnabled(feature, current.remoteDeviceId))
+        }
+        val payload = JSONObject()
+            .put("version", 1)
+            .put("features", featureValues)
+            .toString()
+            .toByteArray()
+        val encrypted = Crypto.encrypt(current.pairingKey!!, payload)
+        current.send(
+            Message(
+                kind = "features.update",
+                sessionId = current.id,
+                messageId = UUID.randomUUID().toString(),
+                nonce = encrypted.nonce,
+                ciphertext = encrypted.ciphertext,
+            ),
+        )
+    }
+
+    private fun receiveFeatureState(current: Session, message: Message) {
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return,
+            message.ciphertext ?: return,
+        ) ?: return fail("Invalid encrypted feature state")
+        val payload = runCatching { JSONObject(plaintext.toString(Charsets.UTF_8)) }.getOrNull()
+            ?: return fail("Invalid feature state")
+        val values = payload.optJSONObject("features") ?: return fail("Invalid feature state")
+        if (payload.optInt("version") != 1) return
+        val received = BridgeyFeature.entries.associateWith { feature ->
+            if (!values.has(feature.key) || values.opt(feature.key) !is Boolean) return fail("Invalid feature state")
+            values.getBoolean(feature.key)
+        }
+        mutableRemoteFeatures.value = received
+        if (received[BridgeyFeature.CLIPBOARD] == false) mutableClipboardStatus.value = null
+        if (received[BridgeyFeature.FIND_DEVICE] == false) {
+            stopPhoneRinging()
+            mutableMacRinging.value = false
         }
     }
 
@@ -905,6 +978,7 @@ class PairingCoordinator(
         session?.close()
         session = null
         cancelIncomingFiles()
+        mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Failed(message)
     }
 
@@ -918,6 +992,7 @@ class PairingCoordinator(
     }
 
     private companion object {
+        fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith { true }
         const val FILE_CHUNK_SIZE = 24 * 1024
         const val MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024
     }
@@ -1003,6 +1078,7 @@ private class TransferProgress(private val totalBytes: Long) {
     }
 }
 
+@android.annotation.TargetApi(Build.VERSION_CODES.Q)
 private class IncomingFileTransfer(
     private val context: Context,
     val transferId: String,
@@ -1022,7 +1098,6 @@ private class IncomingFileTransfer(
     private var nextSequence = 0L
 
     init {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, displayName)
             put(MediaStore.Downloads.MIME_TYPE, mimeType.take(255))

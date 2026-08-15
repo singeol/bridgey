@@ -25,7 +25,7 @@ final class GlobalHotKey {
             &handlerRef
         )
         let signature = OSType(0x4252_4447) // "BRDG"
-        var identifier = EventHotKeyID(signature: signature, id: 1)
+        let identifier = EventHotKeyID(signature: signature, id: 1)
         RegisterEventHotKey(keyCode, modifiers, identifier, GetApplicationEventTarget(), 0, &hotKeyRef)
     }
 
@@ -34,4 +34,3 @@ final class GlobalHotKey {
         if let handlerRef { RemoveEventHandler(handlerRef) }
     }
 }
-

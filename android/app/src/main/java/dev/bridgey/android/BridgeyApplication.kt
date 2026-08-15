@@ -68,6 +68,14 @@ class BridgeyApplication : Application() {
                 }
             }
         }
+        applicationScope.launch {
+            settings.state.collect { lastBatteryIntent?.let(::publishBattery) }
+        }
+        applicationScope.launch {
+            pairing.remoteFeatures.collect { features ->
+                if (features[BridgeyFeature.BATTERY] != false) lastBatteryIntent?.let(::publishBattery)
+            }
+        }
         if (preferences.getBoolean(PREFERENCE_ENABLED, true)) enableBridgey()
     }
 

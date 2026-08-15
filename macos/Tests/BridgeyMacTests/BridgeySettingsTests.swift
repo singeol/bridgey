@@ -12,4 +12,10 @@ final class BridgeySettingsTests: XCTestCase {
         XCTAssertTrue(effectiveFeatureEnabled(globalEnabled: true, deviceEnabled: true))
         XCTAssertTrue(effectiveFeatureEnabled(globalEnabled: true, deviceEnabled: nil))
     }
+
+    func testFeatureRequiresBothDevicesToOfferIt() {
+        XCTAssertTrue(effectiveFeatureAvailable(localEnabled: true, remoteEnabled: true))
+        XCTAssertFalse(effectiveFeatureAvailable(localEnabled: true, remoteEnabled: false))
+        XCTAssertFalse(effectiveFeatureAvailable(localEnabled: false, remoteEnabled: true))
+    }
 }

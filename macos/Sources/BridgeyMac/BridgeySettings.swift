@@ -25,6 +25,10 @@ func effectiveFeatureEnabled(globalEnabled: Bool, deviceEnabled: Bool?) -> Bool 
     globalEnabled && deviceEnabled != false
 }
 
+func effectiveFeatureAvailable(localEnabled: Bool, remoteEnabled: Bool) -> Bool {
+    localEnabled && remoteEnabled
+}
+
 final class ReceiveDirectoryAccess {
     let url: URL
     private let scoped: Bool

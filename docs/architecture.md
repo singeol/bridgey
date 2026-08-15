@@ -65,9 +65,12 @@ and handler. Plugins are independently enabled per paired device. Unknown
 capabilities and message types are ignored or answered with `unsupported_type`.
 
 The current clients persist a global feature policy plus per-device overrides.
-The global switch always takes precedence. Both outgoing commands and incoming
-side effects check the effective policy; active accepted file transfers are
-allowed to complete so changing a setting cannot strand a partial transfer.
+The global switch always takes precedence. After authentication, peers exchange
+their effective feature state through an encrypted `features.update` message.
+A feature is exposed only when both peers enable it; UI actions and dependent
+status such as battery data update immediately. Incoming side effects still
+check local policy independently. Active accepted file transfers are allowed to
+complete so changing a setting cannot strand a partial transfer.
 
 ## Connection lifecycle
 

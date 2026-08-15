@@ -63,6 +63,15 @@ private struct FindDevicePayload: Codable {
     let alertId: String
 }
 
+private struct FeatureStatePayload: Codable {
+    let version: Int
+    let features: [String: Bool]
+}
+
+private func defaultRemoteFeatureState() -> [BridgeyFeature: Bool] {
+    Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0, true) })
+}
+
 private final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -86,6 +95,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var fileTransfers: [String: FileTransferRow] = [:]
     @Published private(set) var macRinging = false
     @Published private(set) var androidRinging = false
+    @Published private(set) var remoteFeatures = defaultRemoteFeatureState()
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustedDeviceIDs.map { id in
@@ -100,6 +110,7 @@ final class PairingCoordinator: ObservableObject {
     private var listener: NWListener?
     private var session: Session?
     private var discoveryCancellable: AnyCancellable?
+    private var settingsCancellable: AnyCancellable?
     private var reconnectWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var lastTrustedEndpoint: (host: String, port: Int, name: String)?
@@ -129,6 +140,17 @@ final class PairingCoordinator: ObservableObject {
         ) { [weak self] in
             self?.sendClipboard()
         }
+        settingsCancellable = settings.$globalFeatures
+            .combineLatest(settings.$deviceFeatures)
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if !self.featureEnabled(.battery) { self.remoteBattery = nil }
+                    if !self.featureEnabled(.clipboard) { self.clipboardStatus = nil }
+                    self.sendFeatureState()
+                }
+            }
     }
 
     func refreshNotificationAuthorization() {
@@ -196,6 +218,7 @@ final class PairingCoordinator: ObservableObject {
         current.localEphemeralKey = current.privateKey!.publicKey.x963Representation.base64EncodedString()
         session?.close()
         session = current
+        remoteFeatures = defaultRemoteFeatureState()
         scheduleConnectionTimeout(for: current)
         configure(current) { [weak self, weak current] in
             guard let self, let current, current.privateKey != nil else { return }
@@ -241,6 +264,7 @@ final class PairingCoordinator: ObservableObject {
         current?.close()
         stopMacSound()
         androidRinging = false
+        remoteFeatures = defaultRemoteFeatureState()
         state = .idle
     }
 
@@ -252,6 +276,7 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         remoteBattery = nil
+        remoteFeatures = defaultRemoteFeatureState()
         state = .idle
     }
 
@@ -275,10 +300,17 @@ final class PairingCoordinator: ObservableObject {
         return settings.isEnabled(feature, for: id?.isEmpty == false ? id : nil)
     }
 
+    func isFeatureAvailable(_ feature: BridgeyFeature) -> Bool {
+        effectiveFeatureAvailable(
+            localEnabled: featureEnabled(feature),
+            remoteEnabled: remoteFeatures[feature] != false
+        )
+    }
+
     func sendClipboard() {
         guard let current = session, case .connected = state else { return }
-        guard featureEnabled(.clipboard, current: current) else {
-            clipboardStatus = "Clipboard sharing is disabled in Settings"
+        guard isFeatureAvailable(.clipboard) else {
+            clipboardStatus = "Clipboard is turned off on one of your devices"
             return
         }
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
@@ -311,7 +343,7 @@ final class PairingCoordinator: ObservableObject {
 
     private func sendFindCommand(kind: String) -> Bool {
         guard let current = session, case .connected = state,
-              (kind != "find.start" || featureEnabled(.findDevice, current: current)),
+              (kind != "find.start" || isFeatureAvailable(.findDevice)),
               let payload = try? JSONEncoder().encode(FindDevicePayload(alertId: "active")),
               let encrypted = try? encrypt(payload, key: current.pairingKey!) else { return false }
         current.send(PairingMessage(
@@ -383,8 +415,8 @@ final class PairingCoordinator: ObservableObject {
             fileTransferStatus = "Not connected — file was not sent"
             return
         }
-        guard featureEnabled(.files) else {
-            fileTransferStatus = "File transfer is disabled in Settings"
+        guard isFeatureAvailable(.files) else {
+            fileTransferStatus = "File transfer is turned off on one of your devices"
             return
         }
         // MenuBarExtra closes its transient window after invoking the action.
@@ -407,19 +439,20 @@ final class PairingCoordinator: ObservableObject {
 
     private func prepareFile(_ url: URL) {
         guard let current = session, case .connected = state else { return }
+        let expectedSessionID = current.id
         let operationID = UUID()
         let preparationCancellation = FileCancellationToken()
         fileOperationID = operationID
         filePreparationCancellation = preparationCancellation
         beginFileTransferUI()
         fileTransferStatus = "Preparing \(url.lastPathComponent)…"
-        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak current] in
-            guard let current else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let transfer = try OutgoingFileTransfer(url: url, cancellation: preparationCancellation)
                 DispatchQueue.main.async {
                     guard let self, self.fileOperationID == operationID,
-                          self.session === current, case .connected = self.state else { return }
+                          let current = self.session, current.id == expectedSessionID,
+                          case .connected = self.state else { return }
                     self.filePreparationCancellation = nil
                     do {
                         let payload = try JSONEncoder().encode(transfer.offer)
@@ -517,6 +550,7 @@ final class PairingCoordinator: ObservableObject {
         let current = Session(connection: connection, peerName: "Android device")
         current.initiatedLocally = false
         session = current
+        remoteFeatures = defaultRemoteFeatureState()
         configure(current, onReady: {})
     }
 
@@ -537,6 +571,7 @@ final class PairingCoordinator: ObservableObject {
             if case .connected = self.state {
                 self.session = nil
                 self.remoteBattery = nil
+                self.remoteFeatures = defaultRemoteFeatureState()
                 self.state = .idle
                 NSLog("TRANSPORT disconnected")
                 self.scheduleReconnect()
@@ -620,6 +655,28 @@ final class PairingCoordinator: ObservableObject {
                 completeIfConfirmed(current)
             case "pairing.cancel":
                 cancel()
+            case "features.update":
+                guard case .connected = state,
+                      message.sessionId == current.id,
+                      let messageID = message.messageId,
+                      current.acceptMessageID(messageID),
+                      let nonce = message.nonce,
+                      let ciphertext = message.ciphertext,
+                      let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
+                      let payload = try? JSONDecoder().decode(FeatureStatePayload.self, from: plaintext),
+                      payload.version == 1,
+                      BridgeyFeature.allCases.allSatisfy({ payload.features[$0.rawValue] != nil }) else {
+                    throw PairingError.invalidMessage
+                }
+                remoteFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
+                    ($0, payload.features[$0.rawValue]!)
+                })
+                if remoteFeatures[.battery] == false { remoteBattery = nil }
+                if remoteFeatures[.clipboard] == false { clipboardStatus = nil }
+                if remoteFeatures[.findDevice] == false {
+                    stopMacSound()
+                    androidRinging = false
+                }
             case "clipboard.update":
                 guard featureEnabled(.clipboard, current: current) else { return }
                 guard case .connected = state,
@@ -848,8 +905,25 @@ final class PairingCoordinator: ObservableObject {
             state = .connected(deviceID: current.remoteDeviceID, peerName: current.peerName)
             reconnectAttempt = 0
             reconnectWorkItem?.cancel()
+            sendFeatureState()
             NSLog("PAIRING verified peer=%@", current.peerName)
         }
+    }
+
+    private func sendFeatureState() {
+        guard let current = session, case .connected = state, let key = current.pairingKey else { return }
+        let features = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
+            ($0.rawValue, settings.isEnabled($0, for: current.remoteDeviceID))
+        })
+        guard let payload = try? JSONEncoder().encode(FeatureStatePayload(version: 1, features: features)),
+              let encrypted = try? encrypt(payload, key: key) else { return }
+        current.send(PairingMessage(
+            kind: "features.update",
+            sessionId: current.id,
+            messageId: UUID().uuidString.lowercased(),
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
     }
 
     private func cancelIncomingFiles() {

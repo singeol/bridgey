@@ -1,5 +1,10 @@
 # Bridgey
 
+[![Build](https://github.com/singeol/bridgey/actions/workflows/ci.yml/badge.svg)](https://github.com/singeol/bridgey/actions/workflows/ci.yml)
+[![Security](https://github.com/singeol/bridgey/actions/workflows/security.yml/badge.svg)](https://github.com/singeol/bridgey/actions/workflows/security.yml)
+[![Latest release](https://img.shields.io/github/v/release/singeol/bridgey)](https://github.com/singeol/bridgey/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/singeol/bridgey)](LICENSE)
+
 Bridgey is an open-source, local-first bridge between Android and macOS. It aims
 to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
@@ -20,8 +25,41 @@ client can later implement the same public protocol without Android changes.
 - Android battery status on macOS
 - Find Device in both directions
 
-Cloud relay, accounts, SMS, calls, media control, remote input, screen sharing,
-and filesystem browsing are outside v0.1.
+Cloud relay, accounts, SMS, calls, remote input, screen sharing, and unrestricted
+filesystem browsing are not part of the near-term roadmap.
+
+## Roadmap
+
+The roadmap describes intended direction rather than fixed release dates.
+
+### v0.2.1 — settings and quality
+
+- [x] Synchronize feature availability between connected devices
+- [x] Add a native macOS Settings window and clearer unavailable-feature states
+- [x] Add lint, unit-test, CodeQL, dependency-review, and Dependabot workflows
+- [x] Audit build tools, libraries, and refresh GitHub Actions
+- [ ] Migrate Android to AGP 9 and built-in Kotlin in a separately validated change
+- [ ] Complete device testing of settings changes and publish the patch release
+
+### v0.3 — reliability
+
+- [ ] Add Android–macOS protocol integration tests with generated identities
+- [ ] Add malformed-message, interrupted-transfer, and reconnect test scenarios
+- [ ] Improve simultaneous transfer history, retry, and recovery behavior
+- [ ] Add structured diagnostics that can be exported without private content
+
+### v0.4 — platform integration
+
+- [ ] Add an Android share target for sending files and text to a trusted device
+- [ ] Add drag-and-drop file sending on macOS
+- [ ] Add richer clipboard content after text synchronization is fully hardened
+- [ ] Improve accessibility, localization readiness, and first-run guidance
+
+### Later
+
+- [ ] Linux client using the public Bridgey protocol
+- [ ] Multiple simultaneous trusted-device sessions
+- [ ] Developer ID signing and notarization when an Apple Developer membership is available
 
 ## Repository
 
@@ -39,12 +77,12 @@ SECURITY.md            Threat model and cryptographic design
 ### Android
 
 Requirements: Android Studio with JDK 17 and Android SDK 36. Open `android/`,
-let Android Studio use its bundled Gradle, then run the `app` configuration on
-an Android 8.0+ device. From a machine with Gradle installed:
+let Android Studio use its bundled JDK, then run the `app` configuration on an
+Android 8.0+ device. From the command line, use the versioned Gradle Wrapper:
 
 ```bash
 cd android
-gradle :app:assembleDebug :app:testDebugUnitTest
+./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
 ```
 
 Release APKs are signed by GitHub Actions using repository secrets. Never
@@ -126,11 +164,13 @@ Open **Settings** on Android or the gear menu on macOS to:
 - choose the macOS folder used for received files;
 - start the macOS app automatically at login.
 
-Feature switches are local policy: disabling a feature blocks new outgoing and
-incoming operations on that client. A file transfer already accepted is allowed
-to finish, while disabling Find Device stops a currently playing alert. Android
-received files remain in `Download/Bridgey`; this uses scoped `MediaStore`
-access and avoids requesting broad storage permission.
+Connected devices exchange their effective feature state over the encrypted
+session. A feature is available only when both devices enable it, so controls
+and battery status update immediately on the other device. A file transfer
+already accepted is allowed to finish, while disabling Find Device stops a
+currently playing alert. Android received files remain in `Download/Bridgey`;
+this uses scoped `MediaStore` access and avoids requesting broad storage
+permission.
 
 ## Development principles
 
@@ -144,7 +184,7 @@ access and avoids requesting broad storage permission.
 
 Suggested debug log categories are `DISCOVERY`, `PAIRING`, `TRANSPORT`, and
 `PLUGIN`. See [the architecture](docs/architecture.md), [wire protocol](docs/protocol.md),
-and [security model](SECURITY.md).
+the [security model](SECURITY.md), and [security testing](docs/security-testing.md).
 
 ## Contributing
 

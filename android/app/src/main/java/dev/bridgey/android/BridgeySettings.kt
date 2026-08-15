@@ -24,6 +24,9 @@ internal fun effectiveFeatureEnabled(
     deviceEnabled: Boolean?,
 ): Boolean = globalEnabled && deviceEnabled != false
 
+internal fun effectiveFeatureAvailable(localEnabled: Boolean, remoteEnabled: Boolean): Boolean =
+    localEnabled && remoteEnabled
+
 class BridgeySettings(context: Context, defaultDeviceName: String) {
     private val preferences = context.getSharedPreferences("bridgey.settings", Context.MODE_PRIVATE)
     private val mutableState = MutableStateFlow(load(defaultDeviceName))

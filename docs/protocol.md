@@ -71,6 +71,13 @@ Core types are `core.hello`, `core.ack`, `core.error`, `core.ping`, and
 `completed`, or `rejected`). Errors contain a stable `code`, safe `message`, and
 optional details. Error text must not disclose secrets.
 
+The current native clients also exchange an authenticated, encrypted
+`features.update` message after pairing and whenever local policy changes. Its
+version 1 payload contains a complete boolean map for `clipboard`, `files`,
+`notifications`, `battery`, and `find_device`. A UI action is available only
+when both peers report the corresponding feature as enabled. Clients predating
+this message are treated as enabling all known v1 features for compatibility.
+
 ## Pairing flow
 
 Pairing runs only after a user selects a discovered peer:

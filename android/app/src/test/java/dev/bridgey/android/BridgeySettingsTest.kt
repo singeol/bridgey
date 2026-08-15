@@ -17,4 +17,11 @@ class BridgeySettingsTest {
         assertTrue(effectiveFeatureEnabled(globalEnabled = true, deviceEnabled = true))
         assertTrue(effectiveFeatureEnabled(globalEnabled = true, deviceEnabled = null))
     }
+
+    @Test
+    fun featureRequiresBothDevicesToOfferIt() {
+        assertTrue(effectiveFeatureAvailable(localEnabled = true, remoteEnabled = true))
+        assertFalse(effectiveFeatureAvailable(localEnabled = true, remoteEnabled = false))
+        assertFalse(effectiveFeatureAvailable(localEnabled = false, remoteEnabled = true))
+    }
 }

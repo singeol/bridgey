@@ -6,6 +6,7 @@ struct BridgeyApp: App {
     @StateObject private var discovery: BonjourDiscovery
     @StateObject private var pairing: PairingCoordinator
     @StateObject private var settings: BridgeySettings
+    private let settingsWindow: SettingsWindowController
 
     init() {
         LegacyPreferences.migrateIfNeeded()
@@ -16,17 +17,19 @@ struct BridgeyApp: App {
         let pairing = PairingCoordinator(deviceID: discovery.localDeviceID, deviceName: discovery.localDeviceName, settings: settings)
         pairing.observe(discovery)
         _pairing = StateObject(wrappedValue: pairing)
+        settingsWindow = SettingsWindowController(discovery: discovery, pairing: pairing, settings: settings)
     }
 
     var body: some Scene {
         MenuBarExtra("Bridgey", systemImage: menuBarSymbol) {
-            BridgeyPanel(discovery: discovery, pairing: pairing, settings: settings)
+            BridgeyPanel(
+                discovery: discovery,
+                pairing: pairing,
+                settings: settings,
+                onOpenSettings: settingsWindow.show
+            )
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(discovery: discovery, pairing: pairing, settings: settings)
-        }
     }
 
     private var menuBarSymbol: String {
@@ -39,6 +42,7 @@ private struct BridgeyPanel: View {
     @ObservedObject var discovery: BonjourDiscovery
     @ObservedObject var pairing: PairingCoordinator
     @ObservedObject var settings: BridgeySettings
+    let onOpenSettings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -77,10 +81,10 @@ private struct BridgeyPanel: View {
 
             Divider()
             HStack {
-                Button { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) } label: {
-                    Image(systemName: "gearshape")
+                Button(action: onOpenSettings) {
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .help("Settings")
                 Spacer()
                 Button("Quit Bridgey") { NSApplication.shared.terminate(nil) }
@@ -118,15 +122,17 @@ private struct BridgeyPanel: View {
                 .frame(width: 46, height: 46)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.headline).lineLimit(1)
-                    if settings.isEnabled(.battery, for: connectedDeviceID), let battery = pairing.remoteBattery {
-                        Label(
-                            "\(battery.level)%\(battery.isCharging ? " · Charging" : "")",
-                            systemImage: battery.isCharging ? "battery.100percent.bolt" : batterySymbol(battery.level)
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    } else {
-                        Text("Android device").font(.caption).foregroundStyle(.secondary)
+                    if pairing.isFeatureAvailable(.battery) {
+                        if let battery = pairing.remoteBattery {
+                            Label(
+                                "\(battery.level)%\(battery.isCharging ? " · Charging" : "")",
+                                systemImage: battery.isCharging ? "battery.100percent.bolt" : batterySymbol(battery.level)
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text("Waiting for battery status…").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Spacer()
@@ -138,24 +144,27 @@ private struct BridgeyPanel: View {
             }
 
             HStack(spacing: 8) {
-                actionButton(
-                    "Clipboard",
-                    icon: "doc.on.clipboard",
-                    enabled: settings.isEnabled(.clipboard, for: connectedDeviceID)
-                ) { pairing.sendClipboard() }
-                actionButton(
-                    "File",
-                    icon: "paperplane",
-                    enabled: settings.isEnabled(.files, for: connectedDeviceID)
-                ) { pairing.chooseAndSendFile() }
-                actionButton(
-                    pairing.macRinging || pairing.androidRinging ? "Stop" : "Ring",
-                    icon: pairing.macRinging || pairing.androidRinging ? "stop.circle" : "bell",
-                    enabled: settings.isEnabled(.findDevice, for: connectedDeviceID)
-                ) {
-                    if pairing.macRinging || pairing.androidRinging { pairing.stopFinding() }
-                    else { pairing.findAndroid() }
+                if pairing.isFeatureAvailable(.clipboard) {
+                    actionButton("Clipboard", icon: "doc.on.clipboard") { pairing.sendClipboard() }
                 }
+                if pairing.isFeatureAvailable(.files) {
+                    actionButton("File", icon: "paperplane") { pairing.chooseAndSendFile() }
+                }
+                if pairing.isFeatureAvailable(.findDevice) {
+                    actionButton(
+                        pairing.macRinging || pairing.androidRinging ? "Stop" : "Ring",
+                        icon: pairing.macRinging || pairing.androidRinging ? "stop.circle" : "bell"
+                    ) {
+                        if pairing.macRinging || pairing.androidRinging { pairing.stopFinding() }
+                        else { pairing.findAndroid() }
+                    }
+                }
+            }
+            if !pairing.isFeatureAvailable(.clipboard) &&
+                !pairing.isFeatureAvailable(.files) &&
+                !pairing.isFeatureAvailable(.findDevice) {
+                Text("Quick actions are turned off in Settings on one of your devices.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             if let status = pairing.clipboardStatus {
@@ -163,7 +172,7 @@ private struct BridgeyPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if settings.isEnabled(.notifications, for: connectedDeviceID) && !pairing.notificationsAuthorized {
+            if pairing.isFeatureAvailable(.notifications) && !pairing.notificationsAuthorized {
                 Button { pairing.enableNotifications() } label: {
                     Label(
                         pairing.notificationPermissionDetermined ? "Open notification settings" : "Enable Mac notifications",
@@ -179,12 +188,7 @@ private struct BridgeyPanel: View {
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var connectedDeviceID: String? {
-        if case let .connected(deviceID, _) = pairing.state { return deviceID }
-        return nil
-    }
-
-    private func actionButton(_ title: String, icon: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: icon).font(.system(size: 16, weight: .medium))
@@ -195,8 +199,6 @@ private struct BridgeyPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.45)
         .background(.background.opacity(0.8), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
@@ -283,6 +285,36 @@ private struct BridgeyPanel: View {
     }
 }
 
+@MainActor
+private final class SettingsWindowController {
+    private let discovery: BonjourDiscovery
+    private let pairing: PairingCoordinator
+    private let settings: BridgeySettings
+    private var window: NSWindow?
+
+    init(discovery: BonjourDiscovery, pairing: PairingCoordinator, settings: BridgeySettings) {
+        self.discovery = discovery
+        self.pairing = pairing
+        self.settings = settings
+    }
+
+    func show() {
+        if window == nil {
+            let content = SettingsView(discovery: discovery, pairing: pairing, settings: settings)
+            let created = NSWindow(contentViewController: NSHostingController(rootView: content))
+            created.title = "Bridgey Settings"
+            created.styleMask = [.titled, .closable, .miniaturizable]
+            created.setContentSize(NSSize(width: 600, height: 680))
+            created.isReleasedWhenClosed = false
+            created.setFrameAutosaveName("BridgeySettingsWindow")
+            created.center()
+            window = created
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
 private struct SettingsView: View {
     @ObservedObject var discovery: BonjourDiscovery
     @ObservedObject var pairing: PairingCoordinator
@@ -313,6 +345,8 @@ private struct SettingsView: View {
                 }
             }
             Section("Features") {
+                Text("These switches control what this Mac shares with every paired device. Changes appear on a connected device immediately.")
+                    .font(.caption).foregroundStyle(.secondary)
                 ForEach(BridgeyFeature.allCases) { feature in
                     Toggle(feature.title, isOn: Binding(
                         get: { settings.globalFeatures[feature] != false },
@@ -332,8 +366,10 @@ private struct SettingsView: View {
                 if pairing.trustedDevices.isEmpty { Text("No paired devices").foregroundStyle(.secondary) }
                 ForEach(pairing.trustedDevices) { device in
                     DisclosureGroup(device.name) {
+                        Text("Choose what this Mac may use with this device.")
+                            .font(.caption).foregroundStyle(.secondary)
                         ForEach(BridgeyFeature.allCases) { feature in
-                            Toggle(feature.title, isOn: Binding(
+                            Toggle(isOn: Binding(
                                 get: {
                                     settings.globalFeatures[feature] != false &&
                                         settings.deviceFeatures[device.id]?[feature] != false
@@ -344,7 +380,14 @@ private struct SettingsView: View {
                                        case let .connected(connectedID, _) = pairing.state,
                                        connectedID == device.id { pairing.stopFinding() }
                                 }
-                            ))
+                            )) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(feature.title)
+                                    if connectedDeviceID == device.id && pairing.remoteFeatures[feature] == false {
+                                        Text("Off on \(device.name)").font(.caption2).foregroundStyle(.orange)
+                                    }
+                                }
+                            }
                             .disabled(settings.globalFeatures[feature] == false)
                         }
                         Button("Forget device", role: .destructive) { pairing.forget(deviceID: device.id) }
@@ -362,5 +405,10 @@ private struct SettingsView: View {
             pairing.refreshNotificationAuthorization()
             settings.refreshLoginItemStatus()
         }
+    }
+
+    private var connectedDeviceID: String? {
+        if case let .connected(deviceID, _) = pairing.state { return deviceID }
+        return nil
     }
 }

@@ -78,6 +78,11 @@ class BridgeyConnectionService : Service() {
                 notificationManager.notify(NOTIFICATION_ID, buildNotification(lastStatus))
             }
         }
+        serviceScope.launch {
+            bridgey.pairing.remoteFeatures.collect {
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(lastStatus))
+            }
+        }
         serviceScope.launch { bridgey.pairing.fileTransfers.collect(::updateTransferNotifications) }
         serviceScope.launch {
             bridgey.pairing.phoneRinging.collect { ringing ->
@@ -181,14 +186,16 @@ class BridgeyConnectionService : Service() {
             .setCategory(android.app.Notification.CATEGORY_SERVICE)
             .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
-            .setForegroundServiceBehavior(android.app.Notification.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(pendingOpenApp)
             .setDeleteIntent(restoreNotification)
             .setAutoCancel(false)
             .setOngoing(true)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            notification.setForegroundServiceBehavior(android.app.Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
         val pairing = (application as BridgeyApplication).pairing
         val connectedDeviceId = (pairing.state.value as? PairingState.Connected)?.deviceId
-        if ((application as BridgeyApplication).settings.isEnabled(BridgeyFeature.CLIPBOARD, connectedDeviceId)) {
+        if (connectedDeviceId != null && pairing.isFeatureAvailable(BridgeyFeature.CLIPBOARD)) {
             notification.addAction(android.R.drawable.ic_menu_send, "Send clipboard", pendingCapture)
         }
         return notification
@@ -286,7 +293,7 @@ class ClipboardCaptureActivity : Activity() {
                         val message = when (result) {
                             ClipboardSendResult.DELIVERED -> "Clipboard sent to Mac"
                             ClipboardSendResult.EMPTY -> "Clipboard is empty"
-                            ClipboardSendResult.DISABLED -> "Clipboard sharing is disabled in Settings"
+                            ClipboardSendResult.DISABLED -> "Clipboard is turned off on one of your devices"
                             ClipboardSendResult.NOT_CONNECTED -> "Not connected — clipboard not sent"
                             ClipboardSendResult.CONNECTION_LOST -> "Send failed — connection lost"
                             ClipboardSendResult.NO_ACKNOWLEDGEMENT -> "Mac did not confirm delivery"
