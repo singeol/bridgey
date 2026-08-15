@@ -25,8 +25,10 @@ client can later implement the same public protocol without Android changes.
 - Android battery status on macOS
 - Find Device in both directions
 
-Cloud relay, accounts, SMS, calls, remote input, screen sharing, and unrestricted
-filesystem browsing are not part of the near-term roadmap.
+The current release deliberately starts with a small local-first feature set.
+Communication, remote-control, screen-sharing, and optional relay features are
+planned in later phases below and will require separate security and platform
+feasibility reviews.
 
 ## Roadmap
 
@@ -55,10 +57,29 @@ The roadmap describes intended direction rather than fixed release dates.
 - [ ] Add richer clipboard content after text synchronization is fully hardened
 - [ ] Improve accessibility, localization readiness, and first-run guidance
 
-### Later
+### v0.5 — notifications and communication
+
+- [ ] Synchronize notification dismissed/read state between Android and macOS
+- [ ] Support notification action buttons and inline replies when Android exposes them
+- [ ] Add per-application notification filters and a private local history
+- [ ] Research SMS viewing and replies with explicit permissions and platform-policy checks
+- [ ] Show incoming-call state and add supported mute/reject actions
+
+### v0.6 — remote interaction
+
+- [ ] Add media playback controls and shared media information
+- [ ] Add presentation controls and an opt-in remote keyboard/touchpad
+- [ ] Add explicitly confirmed screen sharing between Android and desktop
+- [ ] Add scoped remote file browsing without unrestricted filesystem access
+- [ ] Define a permission model and audit log for every remote-control capability
+
+### Later / exploratory
 
 - [ ] Linux client using the public Bridgey protocol
 - [ ] Multiple simultaneous trusted-device sessions
+- [ ] Optional accounts for device recovery without making accounts mandatory
+- [ ] Optional end-to-end encrypted cloud relay for devices outside the local network
+- [ ] Carefully scoped command/device automation without providing a remote shell
 - [ ] Developer ID signing and notarization when an Apple Developer membership is available
 
 ## Repository

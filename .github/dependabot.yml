@@ -4,16 +4,37 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: gradle/actions
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: gradle
     directory: /android
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      kotlin:
+        patterns:
+          - org.jetbrains.kotlin*
+      androidx:
+        patterns:
+          - androidx.*
+    ignore:
+      - dependency-name: com.android.application
+        update-types:
+          - version-update:semver-major
+      - dependency-name: com.android.library
+        update-types:
+          - version-update:semver-major
+      - dependency-name: gradle-wrapper
+        versions:
+          - ">= 9.6"
 
   - package-ecosystem: swift
     directory: /macos
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
