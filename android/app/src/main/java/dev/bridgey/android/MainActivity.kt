@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -82,11 +83,17 @@ private enum class PermissionPrompt {
     NotificationForwarding,
 }
 
+private data class SharedContent(
+    val text: String? = null,
+    val files: List<Uri> = emptyList(),
+)
+
 class MainActivity : ComponentActivity() {
     private lateinit var discovery: NsdDiscoveryService
     private lateinit var pairing: PairingCoordinator
     private var notificationAccessEnabled by mutableStateOf(false)
     private var appNotificationsEnabled by mutableStateOf(false)
+    private var sharedContent by mutableStateOf<SharedContent?>(null)
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshPermissionState()
     }
@@ -101,6 +108,7 @@ class MainActivity : ComponentActivity() {
         bridgey.enableBridgey()
         pairing = bridgey.pairing
         discovery = bridgey.discovery
+        sharedContent = intent.toSharedContent()
         startForegroundService(Intent(this, BridgeyConnectionService::class.java))
         setContent {
             BridgeyTheme {
@@ -120,6 +128,8 @@ class MainActivity : ComponentActivity() {
                     onOpenNotificationAccessSettings = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
+                    sharedContent = sharedContent,
+                    onSharedContentHandled = ::clearSharedContent,
                 )
             }
         }
@@ -130,9 +140,48 @@ class MainActivity : ComponentActivity() {
         refreshPermissionState()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedContent = intent.toSharedContent()
+    }
+
+    private fun Intent.toSharedContent(): SharedContent? {
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return null
+
+        val streams = when (action) {
+            Intent.ACTION_SEND_MULTIPLE -> streamUris()
+            else -> listOfNotNull(streamUri())
+        }.distinct()
+        val sharedText = getCharSequenceExtra(Intent.EXTRA_TEXT)
+            ?.toString()
+            ?.takeIf { it.isNotBlank() && streams.isEmpty() }
+        return SharedContent(text = sharedText, files = streams)
+            .takeIf { it.text != null || it.files.isNotEmpty() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun Intent.streamUri(): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else getParcelableExtra(Intent.EXTRA_STREAM)
+
+    @Suppress("DEPRECATION")
+    private fun Intent.streamUris(): List<Uri> =
+        if (Build.VERSION.SDK_INT >= 33) {
+            getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else {
+            getParcelableArrayListExtra(Intent.EXTRA_STREAM).orEmpty()
+        }
+
     private fun refreshPermissionState() {
         appNotificationsEnabled = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         notificationAccessEnabled = NotificationAccess.isEnabled(this)
+    }
+
+    private fun clearSharedContent() {
+        sharedContent = null
+        // Prevent a handled share intent from being replayed after configuration changes.
+        setIntent(Intent(this, MainActivity::class.java))
     }
 
     private fun requestAppNotifications() {
@@ -181,6 +230,8 @@ private fun BridgeyApp(
     onRequestAppNotifications: () -> Unit,
     onOpenAppNotificationSettings: () -> Unit,
     onOpenNotificationAccessSettings: () -> Unit,
+    sharedContent: SharedContent?,
+    onSharedContentHandled: () -> Unit,
 ) {
     val peers by discovery.peers.collectAsStateWithLifecycle()
     val pairingState by pairing.state.collectAsStateWithLifecycle()
@@ -308,6 +359,50 @@ private fun BridgeyApp(
                 }) { Text("Continue") }
             },
             dismissButton = { TextButton(onClick = { permissionPrompt = null }) { Text("Not now") } },
+        )
+    }
+
+    sharedContent?.let { content ->
+        val isConnected = pairingState is PairingState.Connected
+        val requiredFeature = if (content.files.isNotEmpty()) BridgeyFeature.FILES else BridgeyFeature.CLIPBOARD
+        val featureAvailable = settings.isEnabled(
+            requiredFeature,
+            (pairingState as? PairingState.Connected)?.deviceId,
+        ) && remoteFeatures[requiredFeature] != false
+        val summary = when {
+            content.files.size == 1 -> "Send the selected file to your Mac?"
+            content.files.isNotEmpty() -> "Send ${content.files.size} selected files to your Mac?"
+            else -> "Send the shared text to your Mac?"
+        }
+        AlertDialog(
+            onDismissRequest = onSharedContentHandled,
+            title = { Text("Share with Bridgey") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(summary)
+                    when {
+                        !isConnected -> Text(
+                            "Waiting for a trusted Mac to reconnect.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        !featureAvailable -> Text(
+                            "This feature is turned off on one of your devices.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = isConnected && featureAvailable,
+                    onClick = {
+                        content.text?.let { pairing.sendText(it) }
+                        content.files.forEach(pairing::sendFile)
+                        onSharedContentHandled()
+                    },
+                ) { Text("Send") }
+            },
+            dismissButton = { TextButton(onClick = onSharedContentHandled) { Text("Cancel") } },
         )
     }
 }

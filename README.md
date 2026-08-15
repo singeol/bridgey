@@ -52,7 +52,7 @@ The roadmap describes intended direction rather than fixed release dates.
 
 ### v0.4 — platform integration
 
-- [ ] Add an Android share target for sending files and text to a trusted device
+- [x] Add an Android share target for sending files and text to a trusted device
 - [ ] Add drag-and-drop file sending on macOS
 - [ ] Add richer clipboard content after text synchronization is fully hardened
 - [ ] Improve accessibility, localization readiness, and first-run guidance
