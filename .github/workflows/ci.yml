@@ -18,7 +18,7 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
       - run: chmod +x android/gradlew
       - name: Android lint, tests, and debug build
         run: ./gradlew :app:lintDebug :core:discovery:lintDebug :app:testDebugUnitTest :core:discovery:testDebugUnitTest :app:assembleDebug
