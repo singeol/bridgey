@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bridgey</string>
+    <string name="notification_forwarding_label">Bridgey notification forwarding</string>
+    <string name="welcome_title">Welcome to Bridgey</string>
+    <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
+    <string name="welcome_continue">Get started</string>
+</resources>

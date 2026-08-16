@@ -10,7 +10,7 @@
         android:name=".BridgeyApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="Bridgey"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Bridgey">
@@ -54,7 +54,7 @@
         <service
             android:name=".BridgeyNotificationListenerService"
             android:exported="false"
-            android:label="Bridgey notification forwarding"
+            android:label="@string/notification_forwarding_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

@@ -1,0 +1,4 @@
+"welcome.title" = "Welcome to Bridgey";
+"welcome.body" = "Keep your Mac and phone on the same local network. Choose a device, compare the pairing code, and confirm it on both devices. Optional permissions are requested only when you use the related feature.";
+"welcome.continue" = "Get started";
+"drop.title" = "Drop a file here to send";

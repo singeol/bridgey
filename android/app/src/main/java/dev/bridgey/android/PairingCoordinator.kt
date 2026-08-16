@@ -73,6 +73,7 @@ enum class ClipboardSendResult {
     NOT_CONNECTED,
     CONNECTION_LOST,
     NO_ACKNOWLEDGEMENT,
+    TOO_LARGE,
 }
 
 data class FileTransferState(
@@ -210,15 +211,23 @@ class PairingCoordinator(
 
     fun sendClipboard() {
         val clipboard = appContext.getSystemService(ClipboardManager::class.java)
-        val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(appContext)?.toString()
+        val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+        val text = item?.coerceToText(appContext)?.toString()
         if (text.isNullOrEmpty()) {
             mutableClipboardStatus.value = "Clipboard unavailable. Copy text, return to Bridgey, and try again."
         } else {
-            sendText(text)
+            sendClipboardContent(text, item.htmlText)
         }
     }
 
-    fun sendText(text: String, onResult: (ClipboardSendResult) -> Unit = {}) {
+    fun sendText(text: String, onResult: (ClipboardSendResult) -> Unit = {}) =
+        sendClipboardContent(text, html = null, onResult = onResult)
+
+    private fun sendClipboardContent(
+        text: String,
+        html: String?,
+        onResult: (ClipboardSendResult) -> Unit = {},
+    ) {
         if (!isFeatureAvailable(BridgeyFeature.CLIPBOARD)) {
             mutableClipboardStatus.value = "Clipboard is turned off on one of your devices"
             onResult(ClipboardSendResult.DISABLED)
@@ -227,6 +236,11 @@ class PairingCoordinator(
         if (text.isEmpty()) {
             mutableClipboardStatus.value = "Clipboard is empty"
             onResult(ClipboardSendResult.EMPTY)
+            return
+        }
+        if (!clipboardTextFits(text)) {
+            mutableClipboardStatus.value = "Clipboard content is larger than 32 KB"
+            onResult(ClipboardSendResult.TOO_LARGE)
             return
         }
         val connectedSession = session
@@ -244,9 +258,11 @@ class PairingCoordinator(
             }
             val messageId = UUID.randomUUID().toString()
             pendingClipboardSends[messageId] = onResult
-            val encrypted = Crypto.encrypt(current.pairingKey!!, text.toByteArray())
+            val richContent = RichClipboardContent.create(text, html)
+            val plaintext = richContent?.encode() ?: text.toByteArray(Charsets.UTF_8)
+            val encrypted = Crypto.encrypt(current.pairingKey!!, plaintext)
             val message = Message(
-                kind = "clipboard.update",
+                kind = if (richContent == null) "clipboard.update" else "clipboard.rich",
                 sessionId = current.id,
                 messageId = messageId,
                 nonce = encrypted.nonce,
@@ -755,25 +771,8 @@ class PairingCoordinator(
             }
             "pairing.cancel" -> cancel()
             "features.update" -> receiveFeatureState(current, message)
-            "clipboard.update" -> {
-                if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) {
-                    current.send(Message(kind = "clipboard.rejected", sessionId = current.id, messageId = message.messageId))
-                    sendFeatureState()
-                    return
-                }
-                if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
-                val messageId = message.messageId ?: return
-                if (!current.acceptMessageId(messageId)) return
-                val plaintext = Crypto.decrypt(
-                    current.pairingKey!!,
-                    message.nonce ?: return,
-                    message.ciphertext ?: return,
-                ) ?: return fail("Invalid encrypted clipboard message")
-                appContext.getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText("Bridgey", plaintext.toString(Charsets.UTF_8)))
-                android.util.Log.i("Bridgey", "PLUGIN clipboard received")
-                current.send(Message(kind = "clipboard.ack", sessionId = current.id, messageId = messageId))
-            }
+            "clipboard.update" -> receiveClipboard(current, message, rich = false)
+            "clipboard.rich" -> receiveClipboard(current, message, rich = true)
             "clipboard.ack" -> {
                 val messageId = message.messageId ?: return
                 pendingClipboardSends.remove(messageId)?.let { callback ->
@@ -815,6 +814,35 @@ class PairingCoordinator(
             "files.cancel" -> receiveFileCancel(message.transferId)
             "files.cancel.ack" -> message.transferId?.let { removeFileTransfer(it, "Transfer cancelled") }
         }
+    }
+
+    private fun receiveClipboard(current: Session, message: Message, rich: Boolean) {
+        if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) {
+            current.send(Message(kind = "clipboard.rejected", sessionId = current.id, messageId = message.messageId))
+            sendFeatureState()
+            return
+        }
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return,
+            message.ciphertext ?: return,
+        ) ?: return fail("Invalid encrypted clipboard message")
+        val clip = if (rich) {
+            val content = RichClipboardContent.decode(plaintext)
+                ?: return fail("Invalid rich clipboard message")
+            ClipData.newHtmlText("Bridgey", content.text, content.html)
+        } else {
+            val text = plaintext.toString(Charsets.UTF_8)
+            if (!clipboardTextFits(text)) return fail("Invalid clipboard message")
+            ClipData.newPlainText("Bridgey", text)
+        }
+        appContext.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        diagnostics.record("clipboard", if (rich) "rich_received" else "text_received")
+        android.util.Log.i("Bridgey", "PLUGIN clipboard received")
+        current.send(Message(kind = "clipboard.ack", sessionId = current.id, messageId = messageId))
     }
 
     private fun receiveFindAcknowledgement(current: Session, message: Message, started: Boolean) {

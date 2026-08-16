@@ -16,6 +16,10 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 cp ".build/$CONFIGURATION/BridgeyMac" "$APP_PATH/Contents/MacOS/BridgeyMac"
 cp "Resources/Info.plist" "$APP_PATH/Contents/Info.plist"
+for localization in Resources/*.lproj; do
+  [ -d "$localization" ] || continue
+  cp -R "$localization" "$APP_PATH/Contents/Resources/"
+done
 python3 ./create-icns.py \
   "Resources/AppIcon.iconset" \
   "$APP_PATH/Contents/Resources/Bridgey.icns"

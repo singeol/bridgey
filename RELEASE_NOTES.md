@@ -1,39 +1,27 @@
-# Bridgey v0.3.0
+# Bridgey v0.4.0
 
-Bridgey v0.3.0 focuses on reliability, recovery, and privacy-safe support
-information. Install this version on both Android and macOS.
+Bridgey v0.4.0 improves platform integration and the first-run experience.
+Install this version on both Android and macOS to use the new clipboard format.
 
-## Transfer recovery
+## Platform integration
 
-- Recent active, completed, cancelled, failed, and interrupted transfers now
-  remain visible in a bounded history instead of disappearing after a few
-  seconds.
-- Each client keeps up to 20 completed or interrupted entries and provides a
-  clear-history action.
-- Interrupted or failed outgoing files can be retried after reconnecting. A
-  retry creates a fresh transfer, recomputes its SHA-256, and starts from byte
-  zero.
-- A disconnect now marks every active row as interrupted and removes partial
-  incoming files instead of leaving progress stuck on sending or verifying.
-- Simultaneous transfers are ordered consistently by their start time.
+- Files can now be dragged from Finder onto the connected-device card on macOS.
+- Android's existing system share target sends selected text or files to a
+  connected, trusted Mac.
+- Clipboard transfer preserves HTML formatting when both platforms expose it,
+  while always including a plain-text fallback.
+- Clipboard content is limited to 32 KiB before encryption so oversized data is
+  rejected locally instead of exceeding the transport frame limit.
 
-## Protocol hardening and tests
+## First run and accessibility
 
-- The native transport rejects malformed UTF-8 and protocol frames larger than
-  65,536 bytes before plugin dispatch.
-- Added malformed-frame, interrupted-transfer, bounded-history, reconnect
-  backoff, and diagnostics privacy tests for Android and macOS.
-- Existing shared Android–macOS cryptographic vectors continue to verify P-256,
-  HKDF, confirmation proofs, signatures, and AES-GCM interoperability.
-
-## Privacy-safe diagnostics
-
-- Settings on both platforms can export a structured JSON diagnostics report.
-- Reports contain only bounded event metadata, versions, feature states,
-  connection state, and aggregate transfer counts.
-- Reports exclude clipboard text, notification content, file names, network
-  addresses, and device, session, or transfer identifiers.
-- This release requests no new runtime permissions.
+- Both apps now show a concise first-run guide for discovery, code verification,
+  and optional permissions.
+- Welcome guidance is available in English and Russian, establishing localized
+  resource bundles for future interface translation.
+- Quick actions and the macOS file drop area include clearer accessibility
+  labels and hints.
+- This release requests no new permissions.
 
 ## Downloads
 
@@ -52,11 +40,9 @@ Settings → Privacy & Security → Open Anyway**.
 ## Known limitations
 
 - Both devices must be reachable on the same local network.
-- File retry is user initiated and restarts from byte zero; partial-stream
-  resume is not part of protocol v1.
-- Transfer history is kept for the current application run and is not a record
-  of file contents.
 - Android requires an explicit user action to read and send its clipboard.
+- Rich clipboard support currently preserves text and HTML, not images or files.
+- Drag-and-drop accepts one regular file at a time; folders are not accepted.
 - The macOS build is not notarized.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).

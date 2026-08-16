@@ -54,6 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -94,6 +97,7 @@ class MainActivity : ComponentActivity() {
     private var notificationAccessEnabled by mutableStateOf(false)
     private var appNotificationsEnabled by mutableStateOf(false)
     private var sharedContent by mutableStateOf<SharedContent?>(null)
+    private var showOnboarding by mutableStateOf(false)
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshPermissionState()
     }
@@ -106,6 +110,8 @@ class MainActivity : ComponentActivity() {
             return
         }
         bridgey.enableBridgey()
+        showOnboarding = !getSharedPreferences("bridgey_onboarding", MODE_PRIVATE)
+            .getBoolean("completed", false)
         pairing = bridgey.pairing
         discovery = bridgey.discovery
         sharedContent = intent.toSharedContent()
@@ -131,6 +137,12 @@ class MainActivity : ComponentActivity() {
                     onExportDiagnostics = ::exportDiagnostics,
                     sharedContent = sharedContent,
                     onSharedContentHandled = ::clearSharedContent,
+                    showOnboarding = showOnboarding,
+                    onOnboardingComplete = {
+                        getSharedPreferences("bridgey_onboarding", MODE_PRIVATE)
+                            .edit().putBoolean("completed", true).apply()
+                        showOnboarding = false
+                    },
                 )
             }
         }
@@ -246,6 +258,8 @@ private fun BridgeyApp(
     onExportDiagnostics: () -> Unit,
     sharedContent: SharedContent?,
     onSharedContentHandled: () -> Unit,
+    showOnboarding: Boolean,
+    onOnboardingComplete: () -> Unit,
 ) {
     val peers by discovery.peers.collectAsStateWithLifecycle()
     val pairingState by pairing.state.collectAsStateWithLifecycle()
@@ -329,6 +343,19 @@ private fun BridgeyApp(
                 modifier = Modifier.padding(padding),
             )
         }
+    }
+
+    if (showOnboarding) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.welcome_title)) },
+            text = { Text(stringResource(R.string.welcome_body)) },
+            confirmButton = {
+                Button(onClick = onOnboardingComplete) {
+                    Text(stringResource(R.string.welcome_continue))
+                }
+            },
+        )
     }
 
     when (val state = pairingState) {
@@ -696,7 +723,7 @@ private fun ConnectedDeviceCard(
 private fun QuickAction(title: String, subtitle: String, modifier: Modifier, action: () -> Unit) {
     Surface(
         onClick = action,
-        modifier = modifier,
+        modifier = modifier.semantics { contentDescription = "$title, $subtitle" },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = .86f),
     ) {

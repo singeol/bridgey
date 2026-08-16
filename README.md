@@ -10,7 +10,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.3.0. Android and macOS clients support
+> Project status: v0.4.0. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, and Find Device over the
 > local network. Discovery data is intentionally treated as untrusted.
@@ -19,7 +19,7 @@ client can later implement the same public protocol without Android changes.
 
 - Explicit two-device pairing with a shared verification code
 - Persistent TLS WebSocket connections with public-key pinning
-- Text clipboard synchronization with loop prevention
+- Plain-text and HTML clipboard synchronization with a safe payload limit
 - Streaming file transfer with progress and cancellation
 - Android notification forwarding to native macOS notifications
 - Android battery status on macOS
@@ -50,12 +50,12 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Improve simultaneous transfer history, retry, and recovery behavior
 - [x] Add structured diagnostics that can be exported without private content
 
-### v0.4 — platform integration
+### v0.4.0 — platform integration
 
 - [x] Add an Android share target for sending files and text to a trusted device
-- [ ] Add drag-and-drop file sending on macOS
-- [ ] Add richer clipboard content after text synchronization is fully hardened
-- [ ] Improve accessibility, localization readiness, and first-run guidance
+- [x] Add drag-and-drop file sending on macOS
+- [x] Add richer clipboard content after text synchronization is fully hardened
+- [x] Improve accessibility, localization readiness, and first-run guidance
 
 ### v0.5 — notifications and communication
 

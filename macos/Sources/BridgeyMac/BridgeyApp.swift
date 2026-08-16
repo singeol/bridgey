@@ -61,12 +61,16 @@ private struct BridgeyPanel: View {
                     .frame(width: 8, height: 8)
             }
 
-            switch pairing.state {
-            case let .connected(_, name): connectedCard(name: name)
-            case let .connecting(name): statusCard(title: "Connecting to \(name)", detail: "Establishing a secure session…", progress: true)
-            case let .verification(name, code): verificationCard(name: name, code: code)
-            case let .failed(message): failureCard(message)
-            case .idle: nearbyDevices
+            if !settings.hasCompletedOnboarding {
+                welcomeCard
+            } else {
+                switch pairing.state {
+                case let .connected(_, name): connectedCard(name: name)
+                case let .connecting(name): statusCard(title: "Connecting to \(name)", detail: "Establishing a secure session…", progress: true)
+                case let .verification(name, code): verificationCard(name: name, code: code)
+                case let .failed(message): failureCard(message)
+                case .idle: nearbyDevices
+                }
             }
 
             if !pairing.fileTransfers.isEmpty {
@@ -160,6 +164,27 @@ private struct BridgeyPanel: View {
                     }
                 }
             }
+            if pairing.isFeatureAvailable(.files) {
+                Label(L10n.text("drop.title", fallback: "Drop a file here to send"), systemImage: "square.and.arrow.up")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        Color.accentColor.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
+                    )
+                    .dropDestination(for: URL.self) { urls, _ in
+                        guard let url = urls.first else { return false }
+                        return pairing.sendDroppedFile(url)
+                    }
+                    .accessibilityLabel("File drop area")
+                    .accessibilityHint("Drop a file to send it to the connected Android device")
+            }
             if !pairing.isFeatureAvailable(.clipboard) &&
                 !pairing.isFeatureAvailable(.files) &&
                 !pairing.isFeatureAvailable(.findDevice) {
@@ -188,6 +213,26 @@ private struct BridgeyPanel: View {
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private var welcomeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(L10n.text("welcome.title", fallback: "Welcome to Bridgey"), systemImage: "link.circle.fill")
+                .font(.headline)
+            Text(L10n.text(
+                "welcome.body",
+                fallback: "Keep your Mac and phone on the same local network. Choose a device, compare the pairing code, and confirm it on both devices. Optional permissions are requested only when you use the related feature."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Button(L10n.text("welcome.continue", fallback: "Get started")) {
+                settings.completeOnboarding()
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityHint("Closes the welcome guide and starts device discovery")
+        }
+        .padding(14)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     private func actionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
@@ -200,6 +245,8 @@ private struct BridgeyPanel: View {
         }
         .buttonStyle(.plain)
         .background(.background.opacity(0.8), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityLabel(title)
+        .accessibilityHint("Runs the \(title.lowercased()) action for the connected device")
     }
 
     @ViewBuilder

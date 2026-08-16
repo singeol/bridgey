@@ -51,6 +51,7 @@ final class BridgeySettings: ObservableObject {
     @Published private(set) var receiveFolderPath: String
     @Published private(set) var launchAtLogin = false
     @Published private(set) var loginItemMessage: String?
+    @Published private(set) var hasCompletedOnboarding: Bool
 
     private let defaults = UserDefaults.standard
 
@@ -58,6 +59,7 @@ final class BridgeySettings: ObservableObject {
         let storedDefaults = UserDefaults.standard
         let systemName = Host.current().localizedName ?? "Mac"
         deviceName = storedDefaults.string(forKey: "settings.deviceName") ?? systemName
+        hasCompletedOnboarding = storedDefaults.bool(forKey: "settings.onboarding.completed")
         globalFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
             ($0, storedDefaults.object(forKey: "settings.global.\($0.rawValue)") as? Bool ?? true)
         })
@@ -83,6 +85,11 @@ final class BridgeySettings: ObservableObject {
         guard !name.isEmpty else { return }
         defaults.set(name, forKey: "settings.deviceName")
         deviceName = name
+    }
+
+    func completeOnboarding() {
+        defaults.set(true, forKey: "settings.onboarding.completed")
+        hasCompletedOnboarding = true
     }
 
     func setGlobal(_ feature: BridgeyFeature, enabled: Bool) {

@@ -120,21 +120,22 @@ authenticated session already binds them to the paired sender.
 
 ### Clipboard (`clipboard.v1`)
 
-`clipboard.update` payload:
+`clipboard.update` remains the compatible plain-text form: its decrypted payload
+is UTF-8 text. `clipboard.rich` carries versioned UTF-8 JSON:
 
 ```json
 {
-  "mediaType": "text/plain; charset=utf-8",
+  "version": 1,
   "text": "example",
-  "contentHash": "base64url-sha256",
-  "originDeviceId": "uuid"
+  "html": "<p><strong>example</strong></p>"
 }
 ```
 
-Receivers validate the hash, remember `(originDeviceId, contentHash, id)`, then
-write the clipboard. A platform callback matching a remembered remote write is
-suppressed. Identical local content within the bounded cache is not resent.
-The current transport replies with `clipboard.ack` after the write. If local
+The combined text and HTML content is limited to 32 KiB before encryption. The
+text field is mandatory and is always written as a fallback; supported clients
+also write the HTML representation. Receivers reject malformed, unsupported,
+empty, or oversized payloads. Each encrypted update has a unique message ID and
+the current transport replies with `clipboard.ack` after the write. If local
 policy disabled clipboard handling while a peer still had stale capability
 state, it replies with `clipboard.rejected` and immediately resends the
 encrypted `features.update`; senders time out rather than displaying an

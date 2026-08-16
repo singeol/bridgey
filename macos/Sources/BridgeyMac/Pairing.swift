@@ -343,13 +343,21 @@ final class PairingCoordinator: ObservableObject {
             clipboardStatus = "Clipboard is empty or unavailable"
             return
         }
-        guard let encrypted = try? encrypt(Data(text.utf8), key: current.pairingKey!) else {
+        guard clipboardTextFits(text) else {
+            clipboardStatus = "Clipboard content is larger than 32 KB"
+            return
+        }
+        let html = NSPasteboard.general.data(forType: .html)
+            .flatMap { String(data: $0, encoding: .utf8) }
+        let richContent = RichClipboardContent(text: text, html: html)
+        let plaintext = richContent.flatMap { try? JSONEncoder().encode($0) } ?? Data(text.utf8)
+        guard let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else {
             clipboardStatus = "Encryption failed"
             return
         }
         let messageID = UUID().uuidString.lowercased()
         current.send(PairingMessage(
-            kind: "clipboard.update",
+            kind: richContent == nil ? "clipboard.update" : "clipboard.rich",
             sessionId: current.id,
             messageId: messageID,
             nonce: encrypted.nonce,
@@ -481,6 +489,25 @@ final class PairingCoordinator: ObservableObject {
             guard panel.runModal() == .OK, let url = panel.url else { return }
             self.prepareFile(url)
         }
+    }
+
+    @discardableResult
+    func sendDroppedFile(_ url: URL) -> Bool {
+        guard session != nil, case .connected = state else {
+            fileTransferStatus = "Not connected — file was not sent"
+            return false
+        }
+        guard isFeatureAvailable(.files) else {
+            fileTransferStatus = "File transfer is turned off on one of your devices"
+            return false
+        }
+        guard url.isFileURL,
+              (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            fileTransferStatus = "Drop a file, not a folder"
+            return false
+        }
+        prepareFile(url)
+        return true
     }
 
     func exportDiagnostics() {
@@ -782,7 +809,7 @@ final class PairingCoordinator: ObservableObject {
                     stopMacSound()
                     androidRinging = false
                 }
-            case "clipboard.update":
+            case "clipboard.update", "clipboard.rich":
                 guard featureEnabled(.clipboard, current: current) else {
                     current.send(PairingMessage(
                         kind: "clipboard.rejected",
@@ -798,12 +825,26 @@ final class PairingCoordinator: ObservableObject {
                       current.acceptMessageID(messageID),
                       let nonce = message.nonce,
                       let ciphertext = message.ciphertext,
-                      let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
-                      let text = String(data: plaintext, encoding: .utf8) else {
+                      let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!) else {
                     throw PairingError.invalidMessage
+                }
+                let text: String
+                let html: String?
+                if message.kind == "clipboard.rich" {
+                    guard let payload = try? JSONDecoder().decode(RichClipboardContent.self, from: plaintext),
+                          let content = payload.validated() else { throw PairingError.invalidMessage }
+                    text = content.text
+                    html = content.html
+                } else {
+                    guard let decoded = String(data: plaintext, encoding: .utf8),
+                          clipboardTextFits(decoded) else { throw PairingError.invalidMessage }
+                    text = decoded
+                    html = nil
                 }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
+                if let html { NSPasteboard.general.setData(Data(html.utf8), forType: .html) }
+                diagnostics.record(category: "clipboard", event: html == nil ? "text_received" : "rich_received")
                 NSLog("PLUGIN clipboard received")
                 current.send(PairingMessage(kind: "clipboard.ack", sessionId: current.id, messageId: messageID))
             case "clipboard.ack":

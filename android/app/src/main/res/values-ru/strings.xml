@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bridgey</string>
+    <string name="notification_forwarding_label">Пересылка уведомлений Bridgey</string>
+    <string name="welcome_title">Добро пожаловать в Bridgey</string>
+    <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
+    <string name="welcome_continue">Начать</string>
+</resources>

@@ -91,11 +91,11 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
 - **Battery:** Android publishes percentage and charging state after an
   authenticated connection and on system battery changes. macOS displays the
   latest value only while that peer remains connected.
-- **Clipboard:** text only. Each update carries origin device ID, content hash,
-  and message ID. A remote write is remembered and suppressed when the platform
-  clipboard observer fires. Android background clipboard access is not assumed;
-  automatic reads are offered only while the app is eligible, with explicit
-  user actions otherwise.
+- **Clipboard:** UTF-8 text plus optional HTML with a mandatory plain-text
+  fallback and a 32 KiB content limit. Every encrypted update carries a unique
+  message ID and requires a delivery acknowledgement. Android background
+  clipboard access is not assumed; reading and sending requires an explicit
+  user action.
 - **Files:** metadata is announced in JSON, then bytes are streamed in bounded
   chunks. macOS users choose a persistent receive directory; Android writes to
   its scoped `Download/Bridgey` collection. Hash verification,
