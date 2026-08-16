@@ -33,9 +33,9 @@ private struct FileTransferView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if pairing.fileTransfers.isEmpty {
-                        Text("No active file transfers").foregroundStyle(.secondary)
+                        Text("No recent file transfers").foregroundStyle(.secondary)
                     } else {
-                        ForEach(pairing.fileTransfers.values.sorted(by: { $0.name < $1.name })) { transfer in
+                        ForEach(pairing.fileTransfers.values.sorted(by: { $0.startedAt > $1.startedAt })) { transfer in
                             HStack(alignment: .center, spacing: 12) {
                                 if transfer.active { ProgressView().controlSize(.small) }
                                 VStack(alignment: .leading, spacing: 3) {
@@ -47,6 +47,8 @@ private struct FileTransferView: View {
                                     Button("Cancel", role: .destructive) {
                                         pairing.cancelFileTransfer(id: transfer.id)
                                     }
+                                } else if transfer.retryable {
+                                    Button("Retry") { pairing.retryFileTransfer(id: transfer.id) }
                                 }
                             }
                         }
@@ -58,6 +60,9 @@ private struct FileTransferView: View {
             HStack {
                 if pairing.fileTransferActive {
                     Button("Cancel All", role: .destructive) { pairing.cancelFileTransfer() }
+                }
+                if pairing.fileTransfers.values.contains(where: { !$0.active }) {
+                    Button("Clear History") { pairing.clearTransferHistory() }
                 }
                 Spacer()
                 Button("Close") { NSApp.keyWindow?.close() }

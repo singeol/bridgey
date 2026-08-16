@@ -128,6 +128,7 @@ class MainActivity : ComponentActivity() {
                     onOpenNotificationAccessSettings = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
+                    onExportDiagnostics = ::exportDiagnostics,
                     sharedContent = sharedContent,
                     onSharedContentHandled = ::clearSharedContent,
                 )
@@ -198,6 +199,18 @@ class MainActivity : ComponentActivity() {
                 .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
         )
     }
+
+    private fun exportDiagnostics() {
+        val report = pairing.diagnosticsReport()
+        startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_SUBJECT, "Bridgey diagnostics")
+                putExtra(Intent.EXTRA_TEXT, report)
+            },
+            "Export Bridgey diagnostics",
+        ))
+    }
 }
 
 @Composable
@@ -230,6 +243,7 @@ private fun BridgeyApp(
     onRequestAppNotifications: () -> Unit,
     onOpenAppNotificationSettings: () -> Unit,
     onOpenNotificationAccessSettings: () -> Unit,
+    onExportDiagnostics: () -> Unit,
     sharedContent: SharedContent?,
     onSharedContentHandled: () -> Unit,
 ) {
@@ -284,6 +298,7 @@ private fun BridgeyApp(
                     ) pairing.stopFinding()
                 },
                 onForget = pairing::forget,
+                onExportDiagnostics = onExportDiagnostics,
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -417,6 +432,7 @@ private fun SettingsScreen(
     onGlobalFeatureChanged: (BridgeyFeature, Boolean) -> Unit,
     onDeviceFeatureChanged: (String, BridgeyFeature, Boolean) -> Unit,
     onForget: (String) -> Unit,
+    onExportDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editedName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
@@ -491,6 +507,15 @@ private fun SettingsScreen(
                 }
             }
         }
+        item { SectionTitle("Diagnostics") }
+        item {
+            Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Export a bounded event log without clipboard text, notification content, file names, addresses, or device identifiers.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = onExportDiagnostics) { Text("Export diagnostics") }
+                }
+            }
+        }
         item { Spacer(Modifier.height(12.dp)) }
     }
 }
@@ -551,9 +576,21 @@ private fun DeviceScreen(
         }
 
         if (fileTransfers.isNotEmpty()) {
-            item { SectionTitle("Transfers") }
-            items(fileTransfers.values.toList(), key = { it.id }) { transfer ->
-                TransferCard(transfer) { pairing.cancelFileTransfer(transfer.id) }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Recent transfers")
+                    Spacer(Modifier.weight(1f))
+                    if (fileTransfers.values.any { !it.active }) {
+                        TextButton(onClick = pairing::clearTransferHistory) { Text("Clear") }
+                    }
+                }
+            }
+            items(fileTransfers.values.sortedByDescending(FileTransferState::startedAtMillis), key = { it.id }) { transfer ->
+                TransferCard(
+                    transfer = transfer,
+                    cancel = { pairing.cancelFileTransfer(transfer.id) },
+                    retry = { pairing.retryFileTransfer(transfer.id) },
+                )
             }
         }
 
@@ -694,7 +731,7 @@ private fun PeerCard(peer: DiscoveredPeer, trusted: Boolean, pairing: PairingCoo
 }
 
 @Composable
-private fun TransferCard(transfer: FileTransferState, cancel: () -> Unit) {
+private fun TransferCard(transfer: FileTransferState, cancel: () -> Unit, retry: () -> Unit) {
     Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -707,7 +744,10 @@ private fun TransferCard(transfer: FileTransferState, cancel: () -> Unit) {
                         maxLines = 2,
                     )
                 }
-                if (transfer.active) TextButton(onClick = cancel) { Text("Cancel") }
+                when {
+                    transfer.active -> TextButton(onClick = cancel) { Text("Cancel") }
+                    transfer.retryable -> TextButton(onClick = retry) { Text("Retry") }
+                }
             }
             val percent = transfer.progressPercent
             if (percent != null) {

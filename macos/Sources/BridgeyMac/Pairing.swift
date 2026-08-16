@@ -6,6 +6,7 @@ import Network
 import Security
 import Carbon
 import UserNotifications
+import UniformTypeIdentifiers
 
 enum PairingState: Equatable {
     case idle
@@ -25,6 +26,24 @@ struct FileTransferRow: Identifiable, Equatable {
     let name: String
     let status: String
     let active: Bool
+    let startedAt: Date
+    let retryable: Bool
+
+    init(
+        id: String,
+        name: String,
+        status: String,
+        active: Bool,
+        startedAt: Date = Date(),
+        retryable: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.active = active
+        self.startedAt = startedAt
+        self.retryable = retryable
+    }
 }
 
 struct TrustedDeviceInfo: Identifiable, Equatable {
@@ -121,11 +140,13 @@ final class PairingCoordinator: ObservableObject {
     private let notificationPresenter = NotificationPresenter()
     private var incomingFiles: [String: IncomingFileTransfer] = [:]
     private var outgoingFiles: [String: OutgoingFileTransfer] = [:]
+    private var outgoingFileSources: [String: URL] = [:]
     private var fileOperationID: UUID?
     private var filePreparationCancellation: FileCancellationToken?
     private var fileTransferWindow: FileTransferWindowController?
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
+    private let diagnostics = BridgeyDiagnostics()
 
     init(deviceID: String, deviceName: String, settings: BridgeySettings) {
         self.deviceID = deviceID
@@ -205,6 +226,7 @@ final class PairingCoordinator: ObservableObject {
     }
 
     func pair(host: String, port: Int, peerName: String) {
+        diagnostics.record(category: "pairing", event: "connection_started")
         guard let endpointPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
             state = .failed("Invalid peer port")
             return
@@ -461,6 +483,33 @@ final class PairingCoordinator: ObservableObject {
         }
     }
 
+    func exportDiagnostics() {
+        let stateName: String
+        switch state {
+        case .idle: stateName = "idle"
+        case .connecting: stateName = "connecting"
+        case .verification: stateName = "verification"
+        case .connected: stateName = "connected"
+        case .failed: stateName = "failed"
+        }
+        let localFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
+            ($0, settings.isEnabled($0, for: nil))
+        })
+        guard let report = try? diagnostics.report(
+            connectionState: stateName,
+            transfers: Array(fileTransfers.values),
+            localFeatures: localFeatures,
+            remoteFeatures: remoteFeatures
+        ) else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export Bridgey Diagnostics"
+        panel.nameFieldStringValue = "Bridgey-Diagnostics.json"
+        panel.allowedContentTypes = [.json]
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? report.write(to: url, options: .atomic)
+    }
+
     private func prepareFile(_ url: URL) {
         guard let current = session, case .connected = state else { return }
         let expectedSessionID = current.id
@@ -470,6 +519,7 @@ final class PairingCoordinator: ObservableObject {
         filePreparationCancellation = preparationCancellation
         beginFileTransferUI()
         fileTransferStatus = "Preparing \(url.lastPathComponent)…"
+        diagnostics.record(category: "transfer", event: "send_started")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let transfer = try OutgoingFileTransfer(url: url, cancellation: preparationCancellation)
@@ -482,6 +532,7 @@ final class PairingCoordinator: ObservableObject {
                         let payload = try JSONEncoder().encode(transfer.offer)
                         let encrypted = try encrypt(payload, key: current.pairingKey!)
                         self.outgoingFiles[transfer.transferID] = transfer
+                        self.outgoingFileSources[transfer.transferID] = url
                         self.updateFileTransfer(
                             id: transfer.transferID,
                             name: transfer.displayName,
@@ -505,7 +556,7 @@ final class PairingCoordinator: ObservableObject {
                 DispatchQueue.main.async {
                     guard self?.fileOperationID == operationID else { return }
                     self?.fileTransferStatus = "Could not read the selected file"
-                    self?.fileTransferActive = false
+                    self?.fileTransferActive = self?.fileTransfers.values.contains(where: { $0.active }) == true
                     self?.filePreparationCancellation = nil
                 }
             }
@@ -524,7 +575,7 @@ final class PairingCoordinator: ObservableObject {
         incomingFiles.removeAll()
         outgoingFiles.values.forEach { $0.cancel() }
         outgoingFiles.removeAll()
-        transferIDs.forEach { fileTransfers.removeValue(forKey: $0) }
+        transferIDs.forEach { markFileTransferFinished(id: $0, status: "Transfer cancelled") }
         fileOperationID = nil
         fileTransferActive = false
         fileTransferStatus = "Transfer cancelled"
@@ -535,9 +586,23 @@ final class PairingCoordinator: ObservableObject {
         session?.send(PairingMessage(kind: "files.cancel", sessionId: session?.id ?? "", transferId: transferID))
         incomingFiles.removeValue(forKey: transferID)?.cancel()
         outgoingFiles.removeValue(forKey: transferID)?.cancel()
-        fileTransfers.removeValue(forKey: transferID)
-        fileTransferActive = fileTransfers.values.contains(where: { $0.active })
+        markFileTransferFinished(id: transferID, status: "Transfer cancelled")
         fileTransferStatus = "Transfer cancelled"
+    }
+
+    func retryFileTransfer(id transferID: String) {
+        guard let url = outgoingFileSources[transferID] else { return }
+        fileTransfers.removeValue(forKey: transferID)
+        outgoingFileSources.removeValue(forKey: transferID)
+        diagnostics.record(category: "transfer", event: "retry_started")
+        prepareFile(url)
+    }
+
+    func clearTransferHistory() {
+        let inactiveIDs = fileTransfers.values.filter { !$0.active }.map(\.id)
+        inactiveIDs.forEach { outgoingFileSources.removeValue(forKey: $0) }
+        fileTransfers = fileTransfers.filter { $0.value.active }
+        fileTransferActive = fileTransfers.values.contains(where: { $0.active })
     }
 
     func showFileTransferWindow() {
@@ -553,6 +618,7 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func startListener() {
+        diagnostics.record(category: "transport", event: "listener_started")
         do {
             let listener = try NWListener(using: .tcp, on: 42_458)
             listener.newConnectionHandler = { [weak self] connection in
@@ -600,6 +666,7 @@ final class PairingCoordinator: ObservableObject {
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.state = .idle
                 NSLog("TRANSPORT disconnected")
+                self.diagnostics.record(category: "transport", event: "disconnected", outcome: "reconnecting")
                 self.scheduleReconnect()
             } else {
                 self.state = .failed("Pairing connection lost")
@@ -862,7 +929,7 @@ final class PairingCoordinator: ObservableObject {
                     let folder = destination.deletingLastPathComponent().path
                     fileTransferStatus = "Saved \(transfer.displayName) to \(folder)"
                     updateFileTransfer(id: completion.transferId, name: transfer.displayName, status: fileTransferStatus!, active: false)
-                    fileTransferActive = false
+                    fileTransferActive = fileTransfers.values.contains(where: { $0.active })
                     fileOperationID = nil
                     current.send(PairingMessage(
                         kind: "files.complete.ack",
@@ -907,8 +974,7 @@ final class PairingCoordinator: ObservableObject {
                             self.outgoingFiles.removeValue(forKey: transferID)
                             if transfer.isCancelled {
                                 self.fileTransferStatus = "Transfer cancelled"
-                                self.fileTransfers.removeValue(forKey: transferID)
-                                self.fileTransferActive = self.fileTransfers.values.contains(where: { $0.active })
+                                self.markFileTransferFinished(id: transferID, status: "Transfer cancelled")
                                 return
                             } else {
                                 self.fileTransferStatus = "File transfer failed"
@@ -924,17 +990,17 @@ final class PairingCoordinator: ObservableObject {
                       let transfer = outgoingFiles.removeValue(forKey: transferID) else { return }
                 transfer.cancel()
                 markTransferCancelled(transferID)
-                fileTransfers.removeValue(forKey: transferID)
-                fileTransferActive = fileTransfers.values.contains(where: { $0.active })
+                markFileTransferFinished(id: transferID, status: "File transfer is turned off on Android")
                 fileOperationID = nil
                 filePreparationCancellation = nil
                 fileTransferStatus = "File transfer is turned off on Android"
             case "files.complete.ack":
                 guard let transferID = message.transferId,
                       let transfer = outgoingFiles.removeValue(forKey: transferID) else { return }
+                outgoingFileSources.removeValue(forKey: transferID)
                 fileTransferStatus = "\(transfer.displayName) saved on Android"
                 updateFileTransfer(id: transferID, name: transfer.displayName, status: fileTransferStatus!, active: false)
-                fileTransferActive = false
+                fileTransferActive = fileTransfers.values.contains(where: { $0.active })
                 fileOperationID = nil
                 filePreparationCancellation = nil
                 NSLog("PLUGIN file sent name=%@", transfer.displayName)
@@ -943,14 +1009,15 @@ final class PairingCoordinator: ObservableObject {
                 markTransferCancelled(transferID)
                 incomingFiles.removeValue(forKey: transferID)?.cancel()
                 outgoingFiles.removeValue(forKey: transferID)?.cancel()
-                fileTransfers.removeValue(forKey: transferID)
-                fileTransferActive = fileTransfers.values.contains(where: { $0.active })
+                markFileTransferFinished(id: transferID, status: "Transfer cancelled by Android")
                 fileOperationID = nil
                 fileTransferStatus = "Transfer cancelled by Android"
                 current.send(PairingMessage(kind: "files.cancel.ack", sessionId: current.id, transferId: transferID))
                 NSLog("PLUGIN file cancellation received transfer=%@", String(transferID.prefix(8)))
             case "files.cancel.ack":
-                if let transferID = message.transferId { fileTransfers.removeValue(forKey: transferID) }
+                if let transferID = message.transferId {
+                    markFileTransferFinished(id: transferID, status: "Transfer cancelled")
+                }
             case "files.chunk.ack":
                 if let transferID = message.transferId, let sequence = message.sequence {
                     outgoingFiles[transferID]?.acknowledge(sequence: sequence)
@@ -961,6 +1028,7 @@ final class PairingCoordinator: ObservableObject {
         } catch {
             current.close()
             state = .failed("Invalid pairing message")
+            diagnostics.record(category: "protocol", event: "message_rejected", outcome: "session_closed")
         }
     }
 
@@ -969,6 +1037,7 @@ final class PairingCoordinator: ObservableObject {
             connectionTimeoutWorkItem?.cancel()
             saveTrust(current)
             state = .connected(deviceID: current.remoteDeviceID, peerName: current.peerName)
+            diagnostics.record(category: "pairing", event: "connected")
             reconnectAttempt = 0
             reconnectWorkItem?.cancel()
             sendFeatureState()
@@ -993,13 +1062,20 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func cancelIncomingFiles() {
+        let hadActiveTransfers = fileTransfers.values.contains(where: { $0.active })
         incomingFiles.values.forEach { $0.cancel() }
         incomingFiles.removeAll()
+        outgoingFiles.values.forEach { $0.cancel() }
+        outgoingFiles.removeAll()
+        fileTransfers = recoverInterruptedTransfers(fileTransfers)
         fileTransferActive = false
         fileOperationID = nil
         filePreparationCancellation = nil
         if fileTransferStatus?.hasPrefix("Receiving ") == true {
             fileTransferStatus = "File transfer interrupted"
+        }
+        if hadActiveTransfers {
+            diagnostics.record(category: "transfer", event: "interrupted", outcome: "retry_available")
         }
     }
 
@@ -1011,14 +1087,39 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func updateFileTransfer(id: String, name: String, status: String, active: Bool) {
-        fileTransfers[id] = FileTransferRow(id: id, name: name, status: status, active: active)
+        let previous = fileTransfers[id]
+        fileTransfers[id] = FileTransferRow(
+            id: id,
+            name: name,
+            status: status,
+            active: active,
+            startedAt: previous?.startedAt ?? Date(),
+            retryable: !active && outgoingFileSources[id] != nil
+        )
+        pruneTransferHistory()
         fileTransferActive = fileTransfers.values.contains(where: { $0.active })
-        if !active {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                guard self?.fileTransfers[id]?.active == false else { return }
-                self?.fileTransfers.removeValue(forKey: id)
-            }
-        }
+    }
+
+    private func markFileTransferFinished(id: String, status: String) {
+        guard let transfer = fileTransfers[id] else { return }
+        fileTransfers[id] = FileTransferRow(
+            id: transfer.id,
+            name: transfer.name,
+            status: status,
+            active: false,
+            startedAt: transfer.startedAt,
+            retryable: outgoingFileSources[id] != nil
+        )
+        pruneTransferHistory()
+        fileTransferActive = fileTransfers.values.contains(where: { $0.active })
+    }
+
+    private func pruneTransferHistory() {
+        let active = fileTransfers.values.filter { $0.active }
+        let history = fileTransfers.values.filter { !$0.active }
+            .sorted { $0.startedAt > $1.startedAt }
+            .prefix(maximumTransferHistory)
+        fileTransfers = Dictionary(uniqueKeysWithValues: (active + Array(history)).map { ($0.id, $0) })
     }
 
     private func authenticateOrPrompt(_ current: Session) {
@@ -1060,7 +1161,7 @@ final class PairingCoordinator: ObservableObject {
     private func scheduleReconnect() {
         guard let endpoint = lastTrustedEndpoint else { return }
         reconnectWorkItem?.cancel()
-        let delay = min(pow(2.0, Double(reconnectAttempt)), 30.0)
+        let delay = reconnectDelay(attempt: reconnectAttempt)
         reconnectAttempt += 1
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.state == .idle else { return }
@@ -1168,14 +1269,23 @@ private final class Session {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let data { self.buffer.append(data) }
+                guard self.buffer.count <= maximumProtocolFrameBytes else {
+                    NSLog("TRANSPORT protocol frame exceeded size limit")
+                    self.close()
+                    self.onFailure?()
+                    return
+                }
                 while let newline = self.buffer.firstIndex(of: 0x0A) {
                     let line = self.buffer[..<newline]
                     self.buffer.removeSubrange(...newline)
                     do {
-                        let message = try JSONDecoder().decode(PairingMessage.self, from: Data(line))
+                        let message = try decodeProtocolMessage(Data(line))
                         self.onMessage?(message)
                     } catch {
                         NSLog("TRANSPORT invalid message error=%@", String(describing: error))
+                        self.close()
+                        self.onFailure?()
+                        return
                     }
                 }
                 if complete || error != nil { self.onFailure?() } else { self.receive() }
@@ -1192,7 +1302,7 @@ private final class Session {
     }
 }
 
-private struct PairingMessage: Codable {
+struct PairingMessage: Codable {
     let kind: String
     let sessionId: String
     var deviceId: String? = nil
@@ -1208,7 +1318,7 @@ private struct PairingMessage: Codable {
     var sequence: Int64? = nil
 }
 
-private enum PairingError: Error { case invalidMessage, cancelled }
+enum PairingError: Error { case invalidMessage, cancelled }
 
 private final class FileCancellationToken: @unchecked Sendable {
     private let lock = NSLock()

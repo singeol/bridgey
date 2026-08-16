@@ -394,6 +394,11 @@ private struct SettingsView: View {
                     }
                 }
             }
+            Section("Diagnostics") {
+                Text("Exports a bounded event log without clipboard text, notification content, file names, addresses, or device identifiers.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Export Diagnostics…") { pairing.exportDiagnostics() }
+            }
             Text("Bridgey communicates directly over your local network. Clipboard, files, and notification content are encrypted in transit.")
                 .font(.caption).foregroundStyle(.secondary)
         }

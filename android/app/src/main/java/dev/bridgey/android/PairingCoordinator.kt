@@ -82,6 +82,8 @@ data class FileTransferState(
     val status: String,
     val active: Boolean,
     val progressPercent: Int?,
+    val startedAtMillis: Long = System.currentTimeMillis(),
+    val retryable: Boolean = false,
 )
 
 data class TrustedDevice(val id: String, val name: String)
@@ -122,11 +124,13 @@ class PairingCoordinator(
     private val incomingFiles = ConcurrentHashMap<String, IncomingFileTransfer>()
     private val cancelledTransferIds = ConcurrentHashMap.newKeySet<String>()
     private val outgoingFileJobs = ConcurrentHashMap<String, Job>()
+    private val outgoingFileSources = ConcurrentHashMap<String, Uri>()
     val deviceId: String get() = localDeviceId
     private var server: ServerSocket? = null
     private var session: Session? = null
     private var acceptJob: Job? = null
     private var findRingtone: Ringtone? = null
+    private val diagnostics = BridgeyDiagnostics()
 
     init {
         scope.launch {
@@ -139,6 +143,7 @@ class PairingCoordinator(
 
     fun start() {
         if (acceptJob != null) return
+        diagnostics.record("transport", "listener_started")
         acceptJob = scope.launch {
             runCatching {
                 ServerSocket(port).also { server = it }.use { listener ->
@@ -149,6 +154,7 @@ class PairingCoordinator(
     }
 
     fun pair(host: String, port: Int, peerName: String) {
+        diagnostics.record("pairing", "connection_started")
         android.util.Log.i("Bridgey", "PAIRING started peer=$peerName")
         mutableState.value = PairingState.Connecting(peerName)
         scope.launch {
@@ -421,6 +427,8 @@ class PairingCoordinator(
             return
         }
         val transferId = UUID.randomUUID().toString()
+        outgoingFileSources[transferId] = uri
+        diagnostics.record("transfer", "send_started")
         updateFileTransfer(transferId, "Selected file", "Preparing…", true)
         val job = scope.launch {
             val resolver = appContext.contentResolver
@@ -440,10 +448,12 @@ class PairingCoordinator(
             }
             if (metadata.third < 0) {
                 mutableFileTransferStatus.value = "This file provider did not report a file size"
+                updateFileTransfer(transferId, metadata.first, mutableFileTransferStatus.value!!, false)
                 return@launch
             }
             if (metadata.third > MAX_FILE_SIZE) {
                 mutableFileTransferStatus.value = "File is larger than 10 GB"
+                updateFileTransfer(transferId, metadata.first, mutableFileTransferStatus.value!!, false)
                 return@launch
             }
 
@@ -462,6 +472,7 @@ class PairingCoordinator(
                 Base64.encodeToString(digest.digest(), Base64.NO_WRAP)
             }.getOrElse {
                 mutableFileTransferStatus.value = "Could not read the selected file"
+                updateFileTransfer(transferId, metadata.first, mutableFileTransferStatus.value!!, false)
                 return@launch
             }
 
@@ -485,6 +496,7 @@ class PairingCoordinator(
                 ))) {
                 pendingFileAccepts.remove(transferId)
                 mutableFileTransferStatus.value = "Connection lost — file was not sent"
+                updateFileTransfer(transferId, metadata.first, mutableFileTransferStatus.value!!, false)
                 return@launch
             }
             updateFileTransfer(transferId, metadata.first, "Waiting for Mac…", true)
@@ -543,7 +555,9 @@ class PairingCoordinator(
                 return@launch
             }
             if (withTimeoutOrNull(15_000) { completed.await() } == true) {
+                outgoingFileSources.remove(transferId)
                 updateFileTransfer(transferId, metadata.first, "${metadata.first} saved on Mac", false)
+                diagnostics.record("transfer", "send_completed")
             } else {
                 pendingFileCompletions.remove(transferId)
                 if (transferId in cancelledTransferIds || outgoingFileJobs[transferId] == null) return@launch
@@ -569,9 +583,37 @@ class PairingCoordinator(
         pendingFileCompletions.remove(transferId)?.complete(false)
         val name = mutableFileTransfers.value[transferId]?.name ?: "File"
         removeFileTransfer(transferId, "Transfer cancelled")
+        diagnostics.record("transfer", "cancelled")
     }
 
     fun cancelFileTransfer() = mutableFileTransfers.value.values.filter { it.active }.forEach { cancelFileTransfer(it.id) }
+
+    fun retryFileTransfer(transferId: String) {
+        val uri = outgoingFileSources[transferId] ?: return
+        mutableFileTransfers.value = mutableFileTransfers.value.toMutableMap().apply { remove(transferId) }
+        outgoingFileSources.remove(transferId)
+        diagnostics.record("transfer", "retry_started")
+        sendFile(uri)
+    }
+
+    fun diagnosticsReport(): String {
+        val stateName = when (mutableState.value) {
+            PairingState.Idle -> "idle"
+            is PairingState.Connecting -> "connecting"
+            is PairingState.Verification -> "verification"
+            is PairingState.Connected -> "connected"
+            is PairingState.Failed -> "failed"
+        }
+        val localFeatures = BridgeyFeature.entries.associateWith { settings.isEnabled(it, null) }
+        return diagnostics.report(appContext, stateName, mutableFileTransfers.value.values, localFeatures, mutableRemoteFeatures.value)
+    }
+
+    fun clearTransferHistory() {
+        val inactiveIds = mutableFileTransfers.value.values.filterNot(FileTransferState::active).map(FileTransferState::id)
+        inactiveIds.forEach(outgoingFileSources::remove)
+        mutableFileTransfers.value = mutableFileTransfers.value.filterValues(FileTransferState::active)
+        refreshFileTransferSummary()
+    }
 
     fun stop() {
         pause()
@@ -597,6 +639,10 @@ class PairingCoordinator(
         pendingFileCompletions.clear()
         incomingFiles.values.forEach(IncomingFileTransfer::cancel)
         incomingFiles.clear()
+        outgoingFileJobs.values.forEach(Job::cancel)
+        outgoingFileJobs.clear()
+        mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
+        refreshFileTransferSummary("File transfer interrupted")
         mutableState.value = PairingState.Idle
     }
 
@@ -625,7 +671,7 @@ class PairingCoordinator(
         }
         val result = runCatching {
             while (true) {
-                val line = current.reader.readLine() ?: break
+                val line = current.reader.readProtocolLine() ?: break
                 receive(current, Message.decode(line))
             }
         }
@@ -636,6 +682,7 @@ class PairingCoordinator(
             mutableMacRinging.value = false
             mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
+            diagnostics.record("transport", "disconnected", "reconnecting")
             android.util.Log.i("Bridgey", "TRANSPORT disconnected")
         } else if (session === current) {
             result.exceptionOrNull()?.let {
@@ -889,22 +936,48 @@ class PairingCoordinator(
     private fun updateFileTransfer(id: String, name: String, status: String, active: Boolean) {
         mutableFileTransfers.value = mutableFileTransfers.value.toMutableMap().apply {
             val percent = Regex("(\\d{1,3})%").find(status)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
-            put(id, FileTransferState(id, name, status, active, percent))
+            val previous = get(id)
+            put(id, FileTransferState(
+                id = id,
+                name = name,
+                status = status,
+                active = active,
+                progressPercent = percent,
+                startedAtMillis = previous?.startedAtMillis ?: System.currentTimeMillis(),
+                retryable = !active && outgoingFileSources.containsKey(id),
+            ))
         }
-        val activeTransfers = mutableFileTransfers.value.values.filter { it.active }
-        mutableFileTransferActive.value = activeTransfers.isNotEmpty()
-        mutableFileTransferStatus.value = activeTransfers.firstOrNull()?.status ?: status
-        if (!active) scope.launch {
-            delay(5_000)
-            if (mutableFileTransfers.value[id]?.active == false) removeFileTransfer(id, status)
-        }
+        pruneTransferHistory()
+        refreshFileTransferSummary(status)
     }
 
     private fun removeFileTransfer(id: String, status: String) {
-        mutableFileTransfers.value = mutableFileTransfers.value.toMutableMap().apply { remove(id) }
+        mutableFileTransfers.value[id]?.let { previous ->
+            mutableFileTransfers.value = mutableFileTransfers.value.toMutableMap().apply {
+                put(id, previous.copy(
+                    status = status,
+                    active = false,
+                    progressPercent = null,
+                    retryable = outgoingFileSources.containsKey(id),
+                ))
+            }
+        }
+        pruneTransferHistory()
+        refreshFileTransferSummary(status)
+    }
+
+    private fun pruneTransferHistory() {
+        val active = mutableFileTransfers.value.values.filter(FileTransferState::active)
+        val history = mutableFileTransfers.value.values.filterNot(FileTransferState::active)
+            .sortedByDescending(FileTransferState::startedAtMillis)
+            .take(MAX_TRANSFER_HISTORY)
+        mutableFileTransfers.value = (active + history).associateBy(FileTransferState::id)
+    }
+
+    private fun refreshFileTransferSummary(fallback: String? = null) {
         val activeTransfers = mutableFileTransfers.value.values.filter { it.active }
         mutableFileTransferActive.value = activeTransfers.isNotEmpty()
-        mutableFileTransferStatus.value = activeTransfers.firstOrNull()?.status ?: status
+        mutableFileTransferStatus.value = activeTransfers.firstOrNull()?.status ?: fallback
     }
 
     private fun authenticateOrPrompt(current: Session) {
@@ -944,6 +1017,7 @@ class PairingCoordinator(
         if (current.localConfirmed && current.remoteConfirmed) {
             trust.save(current.remoteDeviceId, current.peerName, current.remoteIdentityKey!!)
             mutableState.value = PairingState.Connected(current.remoteDeviceId, current.peerName)
+            diagnostics.record("pairing", "connected")
             sendFeatureState()
             android.util.Log.i("Bridgey", "PAIRING verified peer=${current.peerName}")
         }
@@ -1003,13 +1077,25 @@ class PairingCoordinator(
         session = null
         cancelIncomingFiles()
         mutableRemoteFeatures.value = defaultFeatureState()
+        mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
+        refreshFileTransferSummary("File transfer interrupted")
         mutableState.value = PairingState.Failed(message)
+        diagnostics.record("protocol", "session_failed", "rejected")
     }
 
     private fun cancelIncomingFiles() {
+        val hadActiveTransfers = mutableFileTransfers.value.values.any(FileTransferState::active)
         incomingFiles.values.forEach(IncomingFileTransfer::cancel)
         incomingFiles.clear()
-        mutableFileTransferActive.value = false
+        outgoingFileJobs.values.forEach(Job::cancel)
+        outgoingFileJobs.clear()
+        pendingFileAccepts.values.forEach { it.complete(false) }
+        pendingFileAccepts.clear()
+        pendingFileCompletions.values.forEach { it.complete(false) }
+        pendingFileCompletions.clear()
+        mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
+        refreshFileTransferSummary("File transfer interrupted")
+        if (hadActiveTransfers) diagnostics.record("transfer", "interrupted", "retry_available")
         if (mutableFileTransferStatus.value?.startsWith("Receiving ") == true) {
             mutableFileTransferStatus.value = "File transfer interrupted"
         }
