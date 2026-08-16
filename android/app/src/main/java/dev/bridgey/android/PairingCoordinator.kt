@@ -1223,7 +1223,7 @@ private data class Message(
     }
 }
 
-private object Crypto {
+internal object Crypto {
     data class PairingMaterial(val code: String, val key: ByteArray)
     data class EncryptedPayload(val nonce: String, val ciphertext: String)
 
@@ -1234,13 +1234,13 @@ private object Crypto {
     fun encodePublicKey(pair: KeyPair): String {
         val public = pair.public as java.security.interfaces.ECPublicKey
         val raw = byteArrayOf(4) + fixed(public.w.affineX) + fixed(public.w.affineY)
-        return Base64.encodeToString(raw, Base64.NO_WRAP)
+        return java.util.Base64.getEncoder().encodeToString(raw)
     }
 
     fun pairingMaterial(pair: KeyPair, remoteBase64: String, sessionId: String): PairingMaterial {
         val agreement = KeyAgreement.getInstance("ECDH")
         agreement.init(pair.private)
-        agreement.doPhase(decodePublicKey(Base64.decode(remoteBase64, Base64.DEFAULT)), true)
+        agreement.doPhase(decodePublicKey(java.util.Base64.getDecoder().decode(remoteBase64)), true)
         val sharedSecret = agreement.generateSecret()
         val salt = MessageDigest.getInstance("SHA-256").digest(sessionId.toByteArray())
         val extract = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(salt, "HmacSHA256")) }
@@ -1258,7 +1258,7 @@ private object Crypto {
         val proof = Mac.getInstance("HmacSHA256").apply {
             init(SecretKeySpec(key, "HmacSHA256"))
         }.doFinal(data)
-        return Base64.encodeToString(proof, Base64.NO_WRAP)
+        return java.util.Base64.getEncoder().encodeToString(proof)
     }
 
     fun verifyConfirmationProof(
@@ -1269,8 +1269,8 @@ private object Crypto {
         proof: String,
     ): Boolean = runCatching {
         MessageDigest.isEqual(
-            Base64.decode(proof, Base64.DEFAULT),
-            Base64.decode(confirmationProof(key, sessionId, deviceId, identityKey), Base64.DEFAULT),
+            java.util.Base64.getDecoder().decode(proof),
+            java.util.Base64.getDecoder().decode(confirmationProof(key, sessionId, deviceId, identityKey)),
         )
     }.getOrDefault(false)
 
@@ -1280,8 +1280,8 @@ private object Crypto {
             init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
         }
         return EncryptedPayload(
-            Base64.encodeToString(nonce, Base64.NO_WRAP),
-            Base64.encodeToString(cipher.doFinal(plaintext), Base64.NO_WRAP),
+            java.util.Base64.getEncoder().encodeToString(nonce),
+            java.util.Base64.getEncoder().encodeToString(cipher.doFinal(plaintext)),
         )
     }
 
@@ -1290,16 +1290,16 @@ private object Crypto {
             init(
                 Cipher.DECRYPT_MODE,
                 SecretKeySpec(key, "AES"),
-                GCMParameterSpec(128, Base64.decode(nonce, Base64.DEFAULT)),
+                GCMParameterSpec(128, java.util.Base64.getDecoder().decode(nonce)),
             )
-        }.doFinal(Base64.decode(ciphertext, Base64.DEFAULT))
+        }.doFinal(java.util.Base64.getDecoder().decode(ciphertext))
     }.getOrNull()
 
     fun verifySignature(identityKey: String, data: ByteArray, signature: String): Boolean = runCatching {
         Signature.getInstance("SHA256withECDSA").apply {
-            initVerify(decodePublicKey(Base64.decode(identityKey, Base64.DEFAULT)))
+            initVerify(decodePublicKey(java.util.Base64.getDecoder().decode(identityKey)))
             update(data)
-        }.verify(Base64.decode(signature, Base64.DEFAULT))
+        }.verify(java.util.Base64.getDecoder().decode(signature))
     }.getOrDefault(false)
 
     private fun decodePublicKey(raw: ByteArray): java.security.PublicKey {

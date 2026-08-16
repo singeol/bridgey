@@ -13,7 +13,10 @@ The project therefore uses layered checks:
 - GitHub Dependency Review on pull requests and weekly Dependabot checks for
   Gradle, SwiftPM, and GitHub Actions;
 - negative tests for untrusted discovery fields, settings policy, manifest
-  permissions, and protocol boundary behavior.
+  permissions, and protocol boundary behavior;
+- shared deterministic Android/macOS cryptographic vectors covering P-256 ECDH,
+  HKDF session keys, verification codes, confirmation proofs, and AES-GCM
+  authentication. Both native implementations must match the same fixture.
 
 Future dynamic coverage should use a purpose-built interoperability harness
 that runs both clients, mutates authenticated protocol frames, interrupts file

@@ -45,7 +45,7 @@ The roadmap describes intended direction rather than fixed release dates.
 
 ### v0.3 — reliability
 
-- [ ] Add Android–macOS protocol integration tests with generated identities
+- [x] Add Android–macOS protocol integration tests with deterministic generated identities
 - [ ] Add malformed-message, interrupted-transfer, and reconnect test scenarios
 - [ ] Improve simultaneous transfer history, retry, and recovery behavior
 - [ ] Add structured diagnostics that can be exported without private content

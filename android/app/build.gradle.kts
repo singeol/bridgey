@@ -60,3 +60,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     testImplementation("junit:junit:4.13.2")
 }
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("bridgey.repoRoot", rootProject.projectDir.parentFile.absolutePath)
+}
