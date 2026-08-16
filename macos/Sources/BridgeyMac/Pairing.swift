@@ -480,7 +480,7 @@ final class PairingCoordinator: ObservableObject {
                     self.filePreparationCancellation = nil
                     do {
                         let payload = try JSONEncoder().encode(transfer.offer)
-                        let encrypted = try self.encrypt(payload, key: current.pairingKey!)
+                        let encrypted = try encrypt(payload, key: current.pairingKey!)
                         self.outgoingFiles[transfer.transferID] = transfer
                         self.updateFileTransfer(
                             id: transfer.transferID,
