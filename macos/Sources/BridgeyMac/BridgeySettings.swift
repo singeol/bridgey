@@ -52,6 +52,7 @@ final class BridgeySettings: ObservableObject {
     @Published private(set) var launchAtLogin = false
     @Published private(set) var loginItemMessage: String?
     @Published private(set) var hasCompletedOnboarding: Bool
+    @Published private(set) var notificationHistoryEnabled: Bool
 
     private let defaults = UserDefaults.standard
 
@@ -60,6 +61,7 @@ final class BridgeySettings: ObservableObject {
         let systemName = Host.current().localizedName ?? "Mac"
         deviceName = storedDefaults.string(forKey: "settings.deviceName") ?? systemName
         hasCompletedOnboarding = storedDefaults.bool(forKey: "settings.onboarding.completed")
+        notificationHistoryEnabled = storedDefaults.bool(forKey: "settings.notificationHistory.enabled")
         globalFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
             ($0, storedDefaults.object(forKey: "settings.global.\($0.rawValue)") as? Bool ?? true)
         })
@@ -95,6 +97,11 @@ final class BridgeySettings: ObservableObject {
     func setGlobal(_ feature: BridgeyFeature, enabled: Bool) {
         defaults.set(enabled, forKey: "settings.global.\(feature.rawValue)")
         globalFeatures[feature] = enabled
+    }
+
+    func setNotificationHistoryEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: "settings.notificationHistory.enabled")
+        notificationHistoryEnabled = enabled
     }
 
     func setForDevice(_ deviceID: String, feature: BridgeyFeature, enabled: Bool) {

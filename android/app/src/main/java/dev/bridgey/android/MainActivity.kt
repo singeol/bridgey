@@ -331,6 +331,10 @@ private fun BridgeyApp(
                         (pairingState as? PairingState.Connected)?.deviceId == deviceId
                     ) pairing.stopFinding()
                 },
+                onNotificationApplicationChanged = { packageName, enabled ->
+                    settings.setNotificationApplicationEnabled(packageName, enabled)
+                    BridgeyNotificationListenerService.filterChanged(packageName, enabled)
+                },
                 onForget = pairing::forget,
                 onExportDiagnostics = onExportDiagnostics,
                 modifier = Modifier.padding(padding),
@@ -478,6 +482,7 @@ private fun SettingsScreen(
     onDeviceNameChanged: (String) -> Unit,
     onGlobalFeatureChanged: (BridgeyFeature, Boolean) -> Unit,
     onDeviceFeatureChanged: (String, BridgeyFeature, Boolean) -> Unit,
+    onNotificationApplicationChanged: (String, Boolean) -> Unit,
     onForget: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
@@ -521,6 +526,45 @@ private fun SettingsScreen(
                 enabled = state.globalFeatures[feature] != false,
                 onChanged = { onGlobalFeatureChanged(feature, it) },
             )
+        }
+
+        if (state.globalFeatures[BridgeyFeature.NOTIFICATIONS] != false) {
+            item { SectionTitle("Notification applications") }
+            item {
+                Text(
+                    if (state.notificationApplications.isEmpty()) {
+                        "Applications appear here after they post a notification."
+                    } else {
+                        "Choose which applications may forward notifications to your paired Mac."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            items(
+                state.notificationApplications.entries.sortedBy { "${it.value.lowercase()}\u0000${it.key}" },
+                key = { "notification.${it.key}" },
+            ) { application ->
+                Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(application.value, fontWeight = FontWeight.Medium)
+                            Text(
+                                application.key,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = application.key !in state.disabledNotificationPackages,
+                            onCheckedChange = { onNotificationApplicationChanged(application.key, it) },
+                        )
+                    }
+                }
+            }
         }
 
         item { SectionTitle("Paired devices") }

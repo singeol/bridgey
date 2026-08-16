@@ -418,6 +418,36 @@ private struct SettingsView: View {
                     }
                 }
             }
+            Section("Notification history") {
+                Toggle("Keep a private local history", isOn: Binding(
+                    get: { settings.notificationHistoryEnabled },
+                    set: { settings.setNotificationHistoryEnabled($0) }
+                ))
+                Text("Off by default. When enabled, Bridgey keeps at most 200 notifications for 7 days on this Mac. Turning it off deletes the history.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if settings.notificationHistoryEnabled {
+                    if pairing.notificationHistory.isEmpty {
+                        Text("No forwarded notifications yet.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(pairing.notificationHistory.prefix(20))) { item in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(item.applicationName).font(.headline)
+                                    Spacer()
+                                    Text(item.receivedAt, format: .dateTime.day().month().hour().minute())
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                if !item.title.isEmpty { Text(item.title).fontWeight(.medium) }
+                                if !item.text.isEmpty {
+                                    Text(item.text).lineLimit(3).foregroundStyle(.secondary)
+                                }
+                            }
+                            .textSelection(.enabled)
+                        }
+                        Button("Clear history", role: .destructive) { pairing.clearNotificationHistory() }
+                    }
+                }
+            }
             Section("Paired devices") {
                 if pairing.trustedDevices.isEmpty { Text("No paired devices").foregroundStyle(.secondary) }
                 ForEach(pairing.trustedDevices) { device in

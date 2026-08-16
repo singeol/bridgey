@@ -10,7 +10,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.5.0-alpha.3. Android and macOS clients support
+> Project status: v0.5.0-alpha.4 development. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, and Find Device over the
 > local network. Discovery data is intentionally treated as untrusted.
@@ -61,7 +61,7 @@ The roadmap describes intended direction rather than fixed release dates.
 
 - [x] Synchronize notification dismissal/removal state between Android and macOS
 - [x] Support notification action buttons and inline replies when Android exposes them
-- [ ] Add per-application notification filters and a private local history
+- [x] Add per-application notification filters and a private local history
 - [ ] Research SMS viewing and replies with explicit permissions and platform-policy checks
 - [ ] Show incoming-call state and add supported mute/reject actions
 

@@ -7,7 +7,7 @@ import org.junit.Test
 class ForwardedNotificationRegistryTest {
     @Test fun removesOnlyForwardedNotificationsOnce() {
         val registry = ForwardedNotificationRegistry()
-        registry.record("one", "system-one")
+        registry.record("one", "system-one", "one.app")
 
         assertTrue(registry.removeSystemKey("system-one") == "one")
         assertTrue(registry.removeSystemKey("system-one") == null)
@@ -16,13 +16,24 @@ class ForwardedNotificationRegistryTest {
 
     @Test fun evictsOldestNotificationAtLimit() {
         val registry = ForwardedNotificationRegistry(limit = 2)
-        registry.record("one", "system-one")
-        registry.record("two", "system-two")
-        registry.record("three", "system-three")
+        registry.record("one", "system-one", "one.app")
+        registry.record("two", "system-two", "two.app")
+        registry.record("three", "system-three", "three.app")
 
         assertTrue(registry.systemKey("one") == null)
         assertTrue(registry.systemKey("two") == "system-two")
         assertTrue(registry.systemKey("three") == "system-three")
+    }
+
+    @Test fun removesEveryMirroredNotificationForFilteredApplication() {
+        val registry = ForwardedNotificationRegistry()
+        registry.record("one", "system-one", "chat.app")
+        registry.record("two", "system-two", "mail.app")
+        registry.record("three", "system-three", "chat.app")
+
+        assertTrue(registry.removePackage("chat.app") == listOf("one", "three"))
+        assertTrue(registry.systemKey("one") == null)
+        assertTrue(registry.systemKey("two") == "system-two")
     }
 
     @Test fun createsStableOpaqueNotificationToken() {

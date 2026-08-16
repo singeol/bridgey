@@ -102,8 +102,11 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   progress, cancellation, and partial-file cleanup are mandatory.
 - **Notifications:** Android's `NotificationListenerService` emits sanitized
   metadata. Bridgey's own notifications and secret/silent categories are
-  filtered. macOS posts through `UserNotifications`. Actions are reserved for a
-  later capability.
+  filtered. Users can disable forwarding per observed Android package before
+  content enters the transport. macOS posts through `UserNotifications` and
+  returns only the bounded action tokens supplied by Android. Optional local
+  history is off by default, retains at most 200 items for seven days, and is
+  stored with owner-only permissions.
 
 ## Platform lifecycle
 

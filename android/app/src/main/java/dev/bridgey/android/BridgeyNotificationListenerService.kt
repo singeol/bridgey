@@ -33,7 +33,7 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         activeService = java.lang.ref.WeakReference(this)
         activeNotifications.orEmpty()
             .filterNot { it.packageName == packageName }
-            .forEach { forwardedNotifications.record(notificationToken(it.key), it.key) }
+            .forEach { forwardedNotifications.record(notificationToken(it.key), it.key, it.packageName) }
         android.util.Log.i("Bridgey", "PLUGIN notification listener connected")
     }
 
@@ -63,10 +63,12 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             val info = packageManager.getApplicationInfo(sbn.packageName, 0)
             packageManager.getApplicationLabel(info).toString()
         }.getOrDefault(sbn.packageName)
+        bridgey.settings.observeNotificationApplication(sbn.packageName, applicationName)
+        if (!bridgey.settings.isNotificationApplicationEnabled(sbn.packageName)) return
         val applicationIcon = applicationIcon(sbn.packageName)
 
         val notificationId = notificationToken(sbn.key)
-        forwardedNotifications.record(notificationId, sbn.key)
+        forwardedNotifications.record(notificationId, sbn.key, sbn.packageName)
         val actions = storeActions(notificationId, notification.actions.orEmpty())
         bridgey.pairing.sendNotification(
             packageName = sbn.packageName,
@@ -93,6 +95,18 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         val systemKey = forwardedNotifications.systemKey(notificationId) ?: return false
         android.os.Handler(android.os.Looper.getMainLooper()).post { cancelNotification(systemKey) }
         return true
+    }
+
+    @Synchronized
+    private fun applyApplicationFilter(packageName: String, enabled: Boolean) {
+        if (enabled) return
+        val bridgey = application as BridgeyApplication
+        forwardedNotifications.removePackage(packageName).forEach { notificationId ->
+            removeActions(notificationId)
+            if (bridgey.isPrimaryUser && bridgey.isBridgeyEnabled) {
+                bridgey.pairing.sendNotificationRemoved(notificationId)
+            }
+        }
     }
 
     @Synchronized
@@ -183,6 +197,10 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             return service.performAction(notificationId, actionToken, replyText)
         }
 
+        fun filterChanged(packageName: String, enabled: Boolean) {
+            activeService?.get()?.applyApplicationFilter(packageName, enabled)
+        }
+
         private const val MAX_FORWARDED_ACTIONS = 4
         private const val MAX_STORED_ACTIONS = 2_048
         private const val MAX_REPLY_LENGTH = 4_096
@@ -205,25 +223,33 @@ private data class StoredNotificationAction(
 )
 
 internal class ForwardedNotificationRegistry(private val limit: Int = 512) {
-    private val systemKeysByNotificationId = linkedMapOf<String, String>()
+    private data class Entry(val systemKey: String, val packageName: String)
+    private val entriesByNotificationId = linkedMapOf<String, Entry>()
 
     @Synchronized
-    fun record(notificationId: String, systemKey: String) {
-        systemKeysByNotificationId.remove(notificationId)
-        systemKeysByNotificationId[notificationId] = systemKey
-        while (systemKeysByNotificationId.size > limit) {
-            systemKeysByNotificationId.remove(systemKeysByNotificationId.keys.first())
+    fun record(notificationId: String, systemKey: String, packageName: String) {
+        entriesByNotificationId.remove(notificationId)
+        entriesByNotificationId[notificationId] = Entry(systemKey, packageName)
+        while (entriesByNotificationId.size > limit) {
+            entriesByNotificationId.remove(entriesByNotificationId.keys.first())
         }
     }
 
     @Synchronized
-    fun systemKey(notificationId: String): String? = systemKeysByNotificationId[notificationId]
+    fun systemKey(notificationId: String): String? = entriesByNotificationId[notificationId]?.systemKey
 
     @Synchronized
     fun removeSystemKey(systemKey: String): String? {
-        val notificationId = systemKeysByNotificationId.entries.firstOrNull { it.value == systemKey }?.key ?: return null
-        systemKeysByNotificationId.remove(notificationId)
+        val notificationId = entriesByNotificationId.entries.firstOrNull { it.value.systemKey == systemKey }?.key ?: return null
+        entriesByNotificationId.remove(notificationId)
         return notificationId
+    }
+
+    @Synchronized
+    fun removePackage(packageName: String): List<String> {
+        val notificationIds = entriesByNotificationId.filterValues { it.packageName == packageName }.keys.toList()
+        notificationIds.forEach(entriesByNotificationId::remove)
+        return notificationIds
     }
 }
 

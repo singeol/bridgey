@@ -152,6 +152,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var macRinging = false
     @Published private(set) var androidRinging = false
     @Published private(set) var remoteFeatures = defaultRemoteFeatureState()
+    @Published private(set) var notificationHistory: [NotificationHistoryItem] = []
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -188,11 +189,17 @@ final class PairingCoordinator: ObservableObject {
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
     private let diagnostics = BridgeyDiagnostics()
+    private let notificationHistoryStore: NotificationHistoryStore
 
     init(deviceID: String, deviceName: String, settings: BridgeySettings) {
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.settings = settings
+        let notificationHistoryStore = NotificationHistoryStore()
+        self.notificationHistoryStore = notificationHistoryStore
+        if settings.notificationHistoryEnabled {
+            notificationHistory = notificationHistoryStore.load()
+        }
         identity = MacIdentity()
         let trustRegistry = MacTrustRegistry()
         self.trustRegistry = trustRegistry
@@ -229,14 +236,22 @@ final class PairingCoordinator: ObservableObject {
         ) { [weak self] in
             self?.sendClipboard()
         }
-        settingsCancellable = settings.$globalFeatures
-            .combineLatest(settings.$deviceFeatures)
+        settingsCancellable = Publishers.CombineLatest3(
+            settings.$globalFeatures,
+            settings.$deviceFeatures,
+            settings.$notificationHistoryEnabled
+        )
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] value in
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
+                    if value.2 {
+                        self.notificationHistory = self.notificationHistoryStore.load()
+                    } else {
+                        self.clearNotificationHistory()
+                    }
                     self.sendFeatureState()
                 }
             }
@@ -986,6 +1001,7 @@ final class PairingCoordinator: ObservableObject {
                       (!payload.title.isEmpty || !payload.text.isEmpty) else {
                     throw PairingError.invalidMessage
                 }
+                recordNotificationHistory(payload, deviceID: current.remoteDeviceID)
                 postNotification(payload, deviceID: current.remoteDeviceID)
             case "notifications.remove":
                 guard featureEnabled(.notifications, current: current),
@@ -1375,6 +1391,24 @@ final class PairingCoordinator: ObservableObject {
                 NSLog("PLUGIN notification received package=%@", payload.packageName)
             }
         }
+    }
+
+    func clearNotificationHistory() {
+        notificationHistoryStore.clear()
+        notificationHistory = []
+    }
+
+    private func recordNotificationHistory(_ payload: RemoteNotificationPayload, deviceID: String) {
+        guard settings.notificationHistoryEnabled else { return }
+        let item = NotificationHistoryItem(
+            id: remoteNotificationRequestIdentifier(deviceID: deviceID, notificationID: payload.notificationId),
+            packageName: String(payload.packageName.prefix(256)),
+            applicationName: String(payload.applicationName.prefix(128)),
+            title: String(payload.title.prefix(1_024)),
+            text: String(payload.text.prefix(8_192)),
+            receivedAt: Date()
+        )
+        notificationHistory = notificationHistoryStore.record(item, in: notificationHistory)
     }
 
     private func notificationIconAttachment(for payload: RemoteNotificationPayload) -> UNNotificationAttachment? {

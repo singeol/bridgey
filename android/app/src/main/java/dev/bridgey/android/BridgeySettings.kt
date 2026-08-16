@@ -17,6 +17,8 @@ data class BridgeySettingsState(
     val deviceName: String,
     val globalFeatures: Map<BridgeyFeature, Boolean>,
     val deviceFeatures: Map<String, Map<BridgeyFeature, Boolean>>,
+    val notificationApplications: Map<String, String>,
+    val disabledNotificationPackages: Set<String>,
 )
 
 internal fun effectiveFeatureEnabled(
@@ -61,6 +63,33 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         )
     }
 
+    @Synchronized
+    fun observeNotificationApplication(packageName: String, applicationName: String) {
+        val safePackage = packageName.take(256)
+        val safeName = applicationName.take(128)
+        if (safePackage.isBlank() || safeName.isBlank() || mutableState.value.notificationApplications[safePackage] == safeName) return
+        preferences.edit().putString("$KEY_NOTIFICATION_APPLICATION_PREFIX$safePackage", safeName).apply()
+        mutableState.value = mutableState.value.copy(
+            notificationApplications = mutableState.value.notificationApplications + (safePackage to safeName),
+        )
+    }
+
+    @Synchronized
+    fun setNotificationApplicationEnabled(packageName: String, enabled: Boolean) {
+        if (!mutableState.value.notificationApplications.containsKey(packageName)) return
+        val disabled = if (enabled) {
+            mutableState.value.disabledNotificationPackages - packageName
+        } else {
+            mutableState.value.disabledNotificationPackages + packageName
+        }
+        preferences.edit().putStringSet(KEY_DISABLED_NOTIFICATION_PACKAGES, disabled).apply()
+        mutableState.value = mutableState.value.copy(disabledNotificationPackages = disabled)
+    }
+
+    @Synchronized
+    fun isNotificationApplicationEnabled(packageName: String): Boolean =
+        packageName !in mutableState.value.disabledNotificationPackages
+
     fun removeDevice(deviceId: String) {
         val editor = preferences.edit()
         BridgeyFeature.entries.forEach { editor.remove("device.$deviceId.${it.key}") }
@@ -80,14 +109,23 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
                 if (deviceId.isNotBlank()) perDevice.getOrPut(deviceId, ::mutableMapOf)[feature] = value
             }
         }
+        val notificationApplications = preferences.all.mapNotNull { (key, value) ->
+            if (!key.startsWith(KEY_NOTIFICATION_APPLICATION_PREFIX) || value !is String) return@mapNotNull null
+            val packageName = key.removePrefix(KEY_NOTIFICATION_APPLICATION_PREFIX)
+            if (packageName.isBlank() || value.isBlank()) null else packageName to value
+        }.toMap()
         return BridgeySettingsState(
             deviceName = preferences.getString(KEY_DEVICE_NAME, null) ?: defaultDeviceName,
             globalFeatures = globals,
             deviceFeatures = perDevice,
+            notificationApplications = notificationApplications,
+            disabledNotificationPackages = preferences.getStringSet(KEY_DISABLED_NOTIFICATION_PACKAGES, emptySet()).orEmpty(),
         )
     }
 
     companion object {
         private const val KEY_DEVICE_NAME = "device_name"
+        private const val KEY_NOTIFICATION_APPLICATION_PREFIX = "notification.application."
+        private const val KEY_DISABLED_NOTIFICATION_PACKAGES = "notification.disabled_packages"
     }
 }

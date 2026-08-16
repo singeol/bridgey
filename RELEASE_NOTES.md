@@ -1,35 +1,25 @@
-# Bridgey v0.5.0-alpha.3
+# Bridgey v0.5.0-alpha.4
 
-This third Bridgey v0.5 preview improves mirrored notification identity and
-connection recovery. Install alpha.3 on both Android and macOS to test the new
-encrypted source-app icons and heartbeat protocol.
+This fourth Bridgey v0.5 preview adds notification controls that keep noisy or
+sensitive applications out of the transport and an optional private history on
+the Mac.
 
-## Changes since alpha.2
+## Changes since alpha.3
 
-- Android now renders the source application's icon as a small, bounded PNG and
-  sends it inside the existing encrypted notification payload.
-- macOS validates the PNG, stores it in a content-addressed cache, and presents
-  it as a native notification attachment. Payloads from older clients remain
-  compatible and simply omit the attachment.
-- Ad-hoc macOS packages now carry an explicit stable designated requirement for
-  `dev.bridgey.mac`. This gives Notification Center and Local Network privacy a
-  stable application identity across unsigned preview updates.
-- Both clients negotiate an encrypted-session heartbeat. Once negotiated, a
-  dead connection is detected within about 30 seconds instead of leaving
-  Android stuck on a stale `Connected` state.
-- macOS now recognizes the system's Local Network policy-denied error, stops
-  misleading reconnect attempts, explains the required permission, and offers
-  a shortcut to the corresponding System Settings pane.
-- Added unit coverage for notification icon validation and naming, heartbeat
-  compatibility and timeout behavior, and Local Network error recognition.
-- This release requests no new permissions.
-
-## Notification icon behavior
-
-macOS reserves the leading icon slot for Bridgey, the application that creates
-the local notification. The originating Android application's icon is supplied
-as the notification's native media attachment; expand the notification if the
-current macOS presentation style does not show attachments in its compact view.
+- Android Settings now lists applications after Bridgey observes a notification
+  from them and lets the user enable or disable forwarding per application.
+- Disabling an application takes effect immediately for future notifications
+  and removes that application's currently mirrored notifications from macOS
+  without dismissing the originals on Android.
+- macOS can optionally retain a private local notification history in Settings.
+  History is off by default, limited to 200 items and seven days, and written
+  with owner-only file permissions.
+- Turning history off deletes the stored history; an explicit Clear history
+  action is also available.
+- Notification filters and history remain local settings and add no protocol
+  metadata, network service, account, or permission.
+- Added regression coverage for per-package mirrored-notification removal and
+  history expiry, replacement, persistence, and size limits.
 
 ## Downloads
 
@@ -40,10 +30,10 @@ current macOS presentation style does not show attachments in its compact view.
 
 ## Known limitations
 
-- Per-application notification filters and private notification history are not
-  included in this alpha.
 - Android does not expose a universal cross-application "read" operation;
   Bridgey forwards only actions explicitly supplied by the source application.
+- SMS and incoming-call integration remain research items because they require
+  sensitive permissions and platform-policy validation.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
   credentials are configured.

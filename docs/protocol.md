@@ -183,7 +183,7 @@ stale UI state on the sender.
 ### Notifications (`notifications.send.v1`, `notifications.dismiss.v1`)
 
 `notifications.post` carries package, application name, opaque notification ID,
-title, text, timestamp, and an optional size-bounded icon reference. Content is
+title, text, timestamp, and an optional size-bounded base64 PNG icon. Content is
 sensitive and must not be logged. `source=bridgey` messages are never forwarded.
 `notifications.dismiss` carries the opaque notification ID back to Android when
 the user dismisses its mirrored macOS notification. `notifications.remove`
@@ -198,6 +198,11 @@ actions with a 64-character title and `allowsReply` flag. macOS returns
 reply of at most 4,096 characters. Android executes only tokens retained for the
 still-active source notification; arbitrary `PendingIntent` data never crosses
 the transport.
+
+Per-application forwarding filters are enforced on Android before payload
+construction and are intentionally local settings rather than protocol state.
+The optional macOS notification history is also local-only, off by default,
+bounded to 200 items and seven days, and never synchronized to a peer.
 
 In the current JSON transport, the notification payload is AES-GCM encrypted
 and contains `packageName`, `applicationName`, `notificationId`, `title`, `text`,
