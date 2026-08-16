@@ -25,4 +25,8 @@ if [ -n "${APPLE_API_KEY_PATH:-}" ] && [ -n "${APPLE_API_KEY_ID:-}" ] && [ -n "$
 fi
 
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUTPUT_DIR/Bridgey-macOS.zip"
-shasum -a 256 "$OUTPUT_DIR/Bridgey-macOS.dmg" "$OUTPUT_DIR/Bridgey-macOS.zip" > "$OUTPUT_DIR/SHA256SUMS-macOS.txt"
+(
+  cd "$OUTPUT_DIR"
+  shasum -a 256 Bridgey-macOS.dmg Bridgey-macOS.zip > SHA256SUMS-macOS.txt
+  shasum -a 256 -c SHA256SUMS-macOS.txt
+)
