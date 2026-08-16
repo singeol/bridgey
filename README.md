@@ -10,7 +10,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.2.1. Android and macOS clients support
+> Project status: v0.3.0. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, and Find Device over the
 > local network. Discovery data is intentionally treated as untrusted.
@@ -43,7 +43,7 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Migrate Android to AGP 9 and built-in Kotlin in a separately validated change
 - [x] Complete device testing of settings changes and publish the patch release
 
-### v0.3 — reliability
+### v0.3.0 — reliability
 
 - [x] Add Android–macOS protocol integration tests with deterministic generated identities
 - [x] Add malformed-message, interrupted-transfer, and reconnect test scenarios

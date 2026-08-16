@@ -1,30 +1,39 @@
-# Bridgey v0.2.1
+# Bridgey v0.3.0
 
-Bridgey v0.2.1 is a reliability and integration release. It keeps the existing
-trusted-device data from v0.2.0 and is intended to be installed on both Android
-and macOS so that feature availability stays synchronized.
+Bridgey v0.3.0 focuses on reliability, recovery, and privacy-safe support
+information. Install this version on both Android and macOS.
 
-## Highlights
+## Transfer recovery
 
-- Share text, one file, or several files directly to Bridgey from Android's
-  system Share sheet.
-- Android and macOS now exchange their effective feature settings over the
-  encrypted session. Unavailable controls disappear or become disabled on the
-  other device, including battery status.
-- A disabled remote action is rejected explicitly instead of leaving the Mac
-  stuck on `Sending…` or a file transfer waiting indefinitely.
-- Clipboard and file-transfer UI state is cleared after remote rejection,
-  timeout, cancellation, or disconnect.
+- Recent active, completed, cancelled, failed, and interrupted transfers now
+  remain visible in a bounded history instead of disappearing after a few
+  seconds.
+- Each client keeps up to 20 completed or interrupted entries and provides a
+  clear-history action.
+- Interrupted or failed outgoing files can be retried after reconnecting. A
+  retry creates a fresh transfer, recomputes its SHA-256, and starts from byte
+  zero.
+- A disconnect now marks every active row as interrupted and removes partial
+  incoming files instead of leaving progress stuck on sending or verifying.
+- Simultaneous transfers are ordered consistently by their start time.
 
-## Quality and security
+## Protocol hardening and tests
 
-- Added shared Android–macOS protocol tests with deterministic identities and
-  encrypted cross-platform test vectors.
-- Added Android lint and unit tests, macOS tests, CodeQL, dependency review,
-  Dependabot, and status badges.
-- Refreshed GitHub Actions and audited build dependencies.
-- Migrated Android to AGP 9.3.1 with built-in Kotlin and Gradle 9.7.
-- No new runtime permissions are requested by this release.
+- The native transport rejects malformed UTF-8 and protocol frames larger than
+  65,536 bytes before plugin dispatch.
+- Added malformed-frame, interrupted-transfer, bounded-history, reconnect
+  backoff, and diagnostics privacy tests for Android and macOS.
+- Existing shared Android–macOS cryptographic vectors continue to verify P-256,
+  HKDF, confirmation proofs, signatures, and AES-GCM interoperability.
+
+## Privacy-safe diagnostics
+
+- Settings on both platforms can export a structured JSON diagnostics report.
+- Reports contain only bounded event metadata, versions, feature states,
+  connection state, and aggregate transfer counts.
+- Reports exclude clipboard text, notification content, file names, network
+  addresses, and device, session, or transfer identifiers.
+- This release requests no new runtime permissions.
 
 ## Downloads
 
@@ -43,11 +52,11 @@ Settings → Privacy & Security → Open Anyway**.
 ## Known limitations
 
 - Both devices must be reachable on the same local network.
+- File retry is user initiated and restarts from byte zero; partial-stream
+  resume is not part of protocol v1.
+- Transfer history is kept for the current application run and is not a record
+  of file contents.
 - Android requires an explicit user action to read and send its clipboard.
-- Android received files remain in `Download/Bridgey`; macOS received files use
-  the directory selected in Settings.
 - The macOS build is not notarized.
-- Linux support, notification replies, SMS, calls, media control, remote input,
-  and screen sharing are planned for later versions.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).
