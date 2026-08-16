@@ -1,7 +1,6 @@
 package dev.bridgey.android
 
-import java.io.BufferedReader
-import java.io.StringReader
+import java.io.ByteArrayInputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -10,7 +9,7 @@ import org.junit.Test
 
 class ReliabilityTest {
     @Test fun boundedReaderAcceptsFramesAndEndOfStream() {
-        val reader = BufferedReader(StringReader("first\r\nsecond"))
+        val reader = ByteArrayInputStream("first\r\nsecond".toByteArray())
 
         assertEquals("first", reader.readProtocolLine())
         assertEquals("second", reader.readProtocolLine())
@@ -18,10 +17,24 @@ class ReliabilityTest {
     }
 
     @Test fun boundedReaderRejectsOversizedFrameBeforeDispatch() {
-        val reader = BufferedReader(StringReader("x".repeat(9)))
+        val reader = ByteArrayInputStream("x".repeat(9).toByteArray())
 
         assertThrows(ProtocolFrameTooLargeException::class.java) {
-            reader.readProtocolLine(maxChars = 8)
+            reader.readProtocolLine(maxBytes = 8)
+        }
+    }
+
+    @Test fun boundedReaderAcceptsFrameAtLimit() {
+        val reader = ByteArrayInputStream(("x".repeat(8) + "\n").toByteArray())
+
+        assertEquals("x".repeat(8), reader.readProtocolLine(maxBytes = 8))
+    }
+
+    @Test fun boundedReaderRejectsMalformedUtf8() {
+        val reader = ByteArrayInputStream(byteArrayOf(0xC3.toByte(), 0x28, '\n'.code.toByte()))
+
+        assertThrows(java.nio.charset.CharacterCodingException::class.java) {
+            reader.readProtocolLine()
         }
     }
 

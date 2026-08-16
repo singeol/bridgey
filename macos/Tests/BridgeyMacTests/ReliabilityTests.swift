@@ -6,6 +6,8 @@ final class ReliabilityTests: XCTestCase {
     func testMalformedAndOversizedFramesAreRejected() throws {
         XCTAssertThrowsError(try decodeProtocolMessage(Data("{}".utf8)))
         XCTAssertThrowsError(try decodeProtocolMessage(Data(repeating: 0x78, count: maximumProtocolFrameBytes + 1)))
+        let longSession = Data((#"{"kind":"features.update","sessionId":""# + String(repeating: "x", count: 129) + #""}"#).utf8)
+        XCTAssertThrowsError(try decodeProtocolMessage(longSession))
         let valid = Data(#"{"kind":"features.update","sessionId":"session"}"#.utf8)
         XCTAssertEqual(try decodeProtocolMessage(valid).kind, "features.update")
     }

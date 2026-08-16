@@ -43,9 +43,11 @@ correlates a response or acknowledgement. Receivers keep a bounded, persistent
 window of recently accepted IDs per peer; a repeated ID is acknowledged if
 needed but its side effect is not executed again.
 
-Limits before negotiation: 256 KiB per JSON frame, depth 32, string length 128
-KiB, and 1,024 keys. File bytes use a separate bounded binary stream rather than
-JSON/base64.
+Limits before negotiation for the planned capability envelope are 256 KiB per
+JSON frame, depth 32, string length 128 KiB, and 1,024 keys. The current native
+newline transport intentionally applies a stricter 65,536-byte frame limit
+before UTF-8/JSON decoding. A malformed, oversized, or unterminated frame closes
+the session before plugin dispatch. File chunks remain bounded independently.
 
 ## Session negotiation
 
@@ -156,6 +158,12 @@ number, and an independently AES-GCM-encrypted chunk. An encrypted
 rename of the partial file. The macOS v1 receiver saves collision-safe names in
 a user-selected directory (default `~/Downloads/Bridgey`) and removes partial
 files when a transfer is interrupted.
+
+Version 1 does not resume a partial file stream. If a connection is interrupted,
+the receiver deletes its pending partial file and both clients mark the transfer
+as interrupted. A user-initiated retry creates a new transfer identifier,
+recomputes the digest, and sends the file again from byte zero.
+
 The Android v1 receiver writes through `MediaStore` to `Download/Bridgey` with
 `IS_PENDING` set until verification, so partial files are hidden and deleted on
 failure without requiring broad storage access.

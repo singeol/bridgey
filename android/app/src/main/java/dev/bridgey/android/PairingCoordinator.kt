@@ -16,9 +16,8 @@ import android.media.RingtoneManager
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import java.io.BufferedReader
 import java.io.BufferedWriter
-import java.io.InputStreamReader
+import java.io.BufferedInputStream
 import java.io.OutputStreamWriter
 import java.io.OutputStream
 import java.math.BigInteger
@@ -671,7 +670,7 @@ class PairingCoordinator(
         }
         val result = runCatching {
             while (true) {
-                val line = current.reader.readProtocolLine() ?: break
+                val line = current.input.readProtocolLine() ?: break
                 receive(current, Message.decode(line))
             }
         }
@@ -1108,7 +1107,7 @@ class PairingCoordinator(
     }
 
     private class Session(private val socket: Socket) {
-        val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+        val input = BufferedInputStream(socket.getInputStream())
         private val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
         var id = ""
         var peerName = "Device"

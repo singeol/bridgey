@@ -46,9 +46,9 @@ The roadmap describes intended direction rather than fixed release dates.
 ### v0.3 — reliability
 
 - [x] Add Android–macOS protocol integration tests with deterministic generated identities
-- [ ] Add malformed-message, interrupted-transfer, and reconnect test scenarios
-- [ ] Improve simultaneous transfer history, retry, and recovery behavior
-- [ ] Add structured diagnostics that can be exported without private content
+- [x] Add malformed-message, interrupted-transfer, and reconnect test scenarios
+- [x] Improve simultaneous transfer history, retry, and recovery behavior
+- [x] Add structured diagnostics that can be exported without private content
 
 ### v0.4 — platform integration
 
@@ -192,6 +192,17 @@ already accepted is allowed to finish, while disabling Find Device stops a
 currently playing alert. Android received files remain in `Download/Bridgey`;
 this uses scoped `MediaStore` access and avoids requesting broad storage
 permission.
+
+Recent file transfers remain visible until cleared. An outgoing transfer that
+fails or is interrupted can be retried after the devices reconnect; retrying
+creates a new transfer and starts from byte zero so that integrity verification
+remains simple and deterministic. Each client keeps at most 20 completed or
+interrupted entries in memory.
+
+Settings can export a structured diagnostics JSON file. It contains bounded
+event metadata, application/platform versions, feature states, connection
+state, and transfer counts. It never includes clipboard text, notification
+content, file names, network addresses, or device/session/transfer identifiers.
 
 ## Development principles
 

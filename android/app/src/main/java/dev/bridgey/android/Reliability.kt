@@ -1,27 +1,36 @@
 package dev.bridgey.android
 
-import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import kotlin.math.min
 
-internal const val MAX_PROTOCOL_FRAME_CHARS = 65_536
+internal const val MAX_PROTOCOL_FRAME_BYTES = 65_536
 internal const val MAX_TRANSFER_HISTORY = 20
 
 internal class ProtocolFrameTooLargeException : IllegalArgumentException("Protocol frame is too large")
 
-internal fun BufferedReader.readProtocolLine(maxChars: Int = MAX_PROTOCOL_FRAME_CHARS): String? {
-    val value = StringBuilder(min(maxChars, 1024))
+internal fun InputStream.readProtocolLine(maxBytes: Int = MAX_PROTOCOL_FRAME_BYTES): String? {
+    val value = ByteArrayOutputStream(min(maxBytes, 1024))
     while (true) {
-        when (val character = read()) {
-            -1 -> return value.takeIf { it.isNotEmpty() }?.toString()
-            '\n'.code -> return value.toString()
+        when (val byte = read()) {
+            -1 -> return value.takeIf { it.size() > 0 }?.toUtf8String()
+            '\n'.code -> return value.toUtf8String()
             '\r'.code -> Unit
             else -> {
-                if (value.length >= maxChars) throw ProtocolFrameTooLargeException()
-                value.append(character.toChar())
+                if (value.size() >= maxBytes) throw ProtocolFrameTooLargeException()
+                value.write(byte)
             }
         }
     }
 }
+
+private fun ByteArrayOutputStream.toUtf8String(): String = Charsets.UTF_8.newDecoder()
+    .onMalformedInput(CodingErrorAction.REPORT)
+    .onUnmappableCharacter(CodingErrorAction.REPORT)
+    .decode(ByteBuffer.wrap(toByteArray()))
+    .toString()
 
 internal fun reconnectDelayMillis(attempt: Int): Long {
     val boundedAttempt = attempt.coerceIn(0, 30)

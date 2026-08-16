@@ -1269,12 +1269,6 @@ private final class Session {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let data { self.buffer.append(data) }
-                guard self.buffer.count <= maximumProtocolFrameBytes else {
-                    NSLog("TRANSPORT protocol frame exceeded size limit")
-                    self.close()
-                    self.onFailure?()
-                    return
-                }
                 while let newline = self.buffer.firstIndex(of: 0x0A) {
                     let line = self.buffer[..<newline]
                     self.buffer.removeSubrange(...newline)
@@ -1287,6 +1281,12 @@ private final class Session {
                         self.onFailure?()
                         return
                     }
+                }
+                guard self.buffer.count <= maximumProtocolFrameBytes else {
+                    NSLog("TRANSPORT protocol frame exceeded size limit")
+                    self.close()
+                    self.onFailure?()
+                    return
                 }
                 if complete || error != nil { self.onFailure?() } else { self.receive() }
             }

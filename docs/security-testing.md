@@ -16,10 +16,13 @@ The project therefore uses layered checks:
   permissions, and protocol boundary behavior;
 - shared deterministic Android/macOS cryptographic vectors covering P-256 ECDH,
   HKDF session keys, verification codes, confirmation proofs, and AES-GCM
-  authentication. Both native implementations must match the same fixture.
+  authentication. Both native implementations must match the same fixture;
+- bounded-frame and malformed-message tests, deterministic reconnect-backoff
+  tests, and interrupted-transfer recovery tests on both clients;
+- diagnostics tests that ensure exported reports contain aggregate state but
+  exclude file names and protocol identifiers.
 
-Future dynamic coverage should use a purpose-built interoperability harness
-that runs both clients, mutates authenticated protocol frames, interrupts file
-streams, and verifies that malformed input cannot cause a side effect or leave
-partial files. It should run in isolated Android emulator and macOS runner
+Future device-level dynamic coverage should extend the interoperability harness
+to run both UI applications, mutate authenticated protocol frames, and interrupt
+live file streams. It should run in isolated Android emulator and macOS runner
 instances with generated identities and no production trust data.
