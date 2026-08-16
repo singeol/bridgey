@@ -2,6 +2,7 @@ package dev.bridgey.android
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -59,9 +60,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.bridgey.core.discovery.DiscoveredPeer
 import dev.bridgey.core.discovery.NsdDiscoveryService
+import java.io.File
 
 private val BridgeyPurple = Color(0xFF6046B6)
 private val BridgeyPurpleDark = Color(0xFFD0BCFF)
@@ -214,11 +217,28 @@ class MainActivity : ComponentActivity() {
 
     private fun exportDiagnostics() {
         val report = pairing.diagnosticsReport()
+        val diagnosticsDirectory = File(cacheDir, "diagnostics")
+        val reportFile = runCatching {
+            check(diagnosticsDirectory.exists() || diagnosticsDirectory.mkdirs())
+            File(diagnosticsDirectory, "Bridgey-Diagnostics.json").apply {
+                writeText(report, Charsets.UTF_8)
+            }
+        }.getOrElse {
+            android.widget.Toast.makeText(this, "Could not create diagnostics file", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        val reportUri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            reportFile,
+        )
         startActivity(Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
                 putExtra(Intent.EXTRA_SUBJECT, "Bridgey diagnostics")
-                putExtra(Intent.EXTRA_TEXT, report)
+                putExtra(Intent.EXTRA_STREAM, reportUri)
+                clipData = ClipData.newUri(contentResolver, "Bridgey diagnostics", reportUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
             "Export Bridgey diagnostics",
         ))
@@ -539,7 +559,7 @@ private fun SettingsScreen(
             Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Export a bounded event log without clipboard text, notification content, file names, addresses, or device identifiers.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(onClick = onExportDiagnostics) { Text("Export diagnostics") }
+                    OutlinedButton(onClick = onExportDiagnostics) { Text("Share diagnostics file") }
                 }
             }
         }

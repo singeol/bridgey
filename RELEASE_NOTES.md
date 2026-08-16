@@ -1,18 +1,19 @@
-# Bridgey v0.4.2
+# Bridgey v0.4.3
 
-Bridgey v0.4.2 is a usability patch for file drag-and-drop and oversized
-clipboard content. Install it on both Android and macOS; protocol compatibility
-with v0.4.x is unchanged.
+Bridgey v0.4.3 fixes Android diagnostic report sharing. Install this update on
+Android to send diagnostics to a connected Mac through Bridgey's file-transfer
+channel. Protocol compatibility with v0.4.x is unchanged.
 
 ## Fixes and improvements
 
-- macOS file drag-and-drop now opens in a dedicated floating window that stays
-  visible while switching to Finder.
-- The drop window clearly reports when no Android device is connected or File
-  transfer is disabled.
-- Android and macOS now explain that clipboard content over 32 KiB cannot be
-  sent as a clipboard message and should be transferred as a file instead.
-- Added English and Russian text for the new macOS file-drop workflow.
+- Android now exports diagnostics as a real `Bridgey-Diagnostics.json` file
+  instead of placing the complete report in `EXTRA_TEXT`.
+- Choosing Bridgey in the Android share sheet now treats the diagnostic report
+  as a file, so it is not rejected by the 32 KiB clipboard limit.
+- Diagnostic files are shared from a private cache directory through a
+  non-exported `FileProvider` with temporary read access only.
+- The Settings action is now labelled **Share diagnostics file** to make the
+  behavior explicit.
 - This release requests no new permissions.
 
 ## Downloads
