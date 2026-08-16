@@ -63,6 +63,23 @@ private struct RemoteNotificationPayload: Codable {
     let title: String
     let text: String
     let timestamp: Int64
+    let actions: [RemoteNotificationActionPayload]?
+}
+
+private struct RemoteNotificationActionPayload: Codable {
+    let actionToken: String
+    let title: String
+    let allowsReply: Bool
+}
+
+private struct NotificationReferencePayload: Codable {
+    let notificationId: String
+}
+
+private struct NotificationActionCommandPayload: Codable {
+    let notificationId: String
+    let actionToken: String
+    let replyText: String?
 }
 
 private struct FileOfferPayload: Codable {
@@ -92,12 +109,31 @@ private func defaultRemoteFeatureState() -> [BridgeyFeature: Bool] {
 }
 
 private final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    var onDismiss: ((String, String) -> Void)?
+    var onAction: ((String, String, String, String?) -> Void)?
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+        guard let notificationID = response.notification.request.content.userInfo["androidNotificationId"] as? String,
+              let deviceID = response.notification.request.content.userInfo["androidDeviceId"] as? String else { return }
+        if response.actionIdentifier == UNNotificationDismissActionIdentifier {
+            onDismiss?(notificationID, deviceID)
+        } else if response.actionIdentifier != UNNotificationDefaultActionIdentifier {
+            let replyText = (response as? UNTextInputNotificationResponse)?.userText
+            onAction?(notificationID, deviceID, response.actionIdentifier, replyText)
+        }
     }
 }
 
@@ -139,6 +175,7 @@ final class PairingCoordinator: ObservableObject {
     private var clipboardSendID: String?
     private var clipboardTimeoutWorkItem: DispatchWorkItem?
     private let notificationPresenter = NotificationPresenter()
+    private var remoteNotificationCategories: [String: UNNotificationCategory] = [:]
     private var incomingFiles: [String: IncomingFileTransfer] = [:]
     private var outgoingFiles: [String: OutgoingFileTransfer] = [:]
     private var outgoingFileSources: [String: URL] = [:]
@@ -158,6 +195,29 @@ final class PairingCoordinator: ObservableObject {
         let trustRegistry = MacTrustRegistry()
         self.trustRegistry = trustRegistry
         trustedDeviceIDs = trustRegistry.deviceIDs
+        notificationPresenter.onDismiss = { [weak self] notificationID, deviceID in
+            Task { @MainActor [weak self] in
+                self?.dismissAndroidNotification(notificationID, deviceID: deviceID)
+            }
+        }
+        notificationPresenter.onAction = { [weak self] notificationID, deviceID, actionToken, replyText in
+            Task { @MainActor [weak self] in
+                self?.performAndroidNotificationAction(
+                    notificationID,
+                    deviceID: deviceID,
+                    actionToken: actionToken,
+                    replyText: replyText
+                )
+            }
+        }
+        let remoteNotificationCategory = UNNotificationCategory(
+            identifier: "bridgey.android.notification",
+            actions: [],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        remoteNotificationCategories[remoteNotificationCategory.identifier] = remoteNotificationCategory
+        UNUserNotificationCenter.current().setNotificationCategories(Set(remoteNotificationCategories.values))
         UNUserNotificationCenter.current().delegate = notificationPresenter
         refreshNotificationAuthorization()
         startListener()
@@ -906,7 +966,11 @@ final class PairingCoordinator: ObservableObject {
                       (!payload.title.isEmpty || !payload.text.isEmpty) else {
                     throw PairingError.invalidMessage
                 }
-                postNotification(payload)
+                postNotification(payload, deviceID: current.remoteDeviceID)
+            case "notifications.remove":
+                guard featureEnabled(.notifications, current: current),
+                      let reference = try receiveNotificationReference(message, in: current) else { return }
+                removeRemoteNotification(reference.notificationId, deviceID: current.remoteDeviceID)
             case "files.offer":
                 guard featureEnabled(.files, current: current) else {
                     current.send(PairingMessage(
@@ -1243,18 +1307,20 @@ final class PairingCoordinator: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: timeout)
     }
 
-    private func postNotification(_ payload: RemoteNotificationPayload) {
+    private func postNotification(_ payload: RemoteNotificationPayload, deviceID: String) {
         let content = UNMutableNotificationContent()
         content.title = payload.applicationName
         content.subtitle = payload.title
         content.body = payload.text
         content.sound = .default
-        content.userInfo = ["androidPackage": payload.packageName]
-        let digest = SHA256.hash(data: Data(payload.notificationId.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        content.categoryIdentifier = notificationCategoryIdentifier(for: payload, deviceID: deviceID)
+        content.userInfo = [
+            "androidPackage": payload.packageName,
+            "androidNotificationId": payload.notificationId,
+            "androidDeviceId": deviceID,
+        ]
         let request = UNNotificationRequest(
-            identifier: "bridgey.android.\(digest)",
+            identifier: remoteNotificationRequestIdentifier(deviceID: deviceID, notificationID: payload.notificationId),
             content: content,
             trigger: nil
         )
@@ -1265,6 +1331,117 @@ final class PairingCoordinator: ObservableObject {
                 NSLog("PLUGIN notification received package=%@", payload.packageName)
             }
         }
+    }
+
+    private func notificationCategoryIdentifier(for payload: RemoteNotificationPayload, deviceID: String) -> String {
+        let actions = (payload.actions ?? []).prefix(4).compactMap { action -> UNNotificationAction? in
+            guard action.actionToken.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  !action.title.isEmpty,
+                  action.title.count <= 64 else { return nil }
+            if action.allowsReply {
+                return UNTextInputNotificationAction(
+                    identifier: action.actionToken,
+                    title: action.title,
+                    options: [],
+                    textInputButtonTitle: "Send",
+                    textInputPlaceholder: "Reply"
+                )
+            }
+            return UNNotificationAction(identifier: action.actionToken, title: action.title, options: [])
+        }
+        guard !actions.isEmpty else { return "bridgey.android.notification" }
+        let categoryID = remoteNotificationCategoryIdentifier(
+            deviceID: deviceID,
+            notificationID: payload.notificationId,
+            actionTokens: actions.map(\.identifier)
+        )
+        remoteNotificationCategories[categoryID] = UNNotificationCategory(
+            identifier: categoryID,
+            actions: actions,
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        while remoteNotificationCategories.count > 129,
+              let staleID = remoteNotificationCategories.keys.first(where: { $0 != "bridgey.android.notification" }) {
+            remoteNotificationCategories.removeValue(forKey: staleID)
+        }
+        UNUserNotificationCenter.current().setNotificationCategories(Set(remoteNotificationCategories.values))
+        return categoryID
+    }
+
+    private func dismissAndroidNotification(_ notificationID: String, deviceID: String) {
+        guard case let .connected(connectedDeviceID, _) = state,
+              connectedDeviceID == deviceID,
+              let current = session,
+              current.remoteDeviceID == deviceID,
+              featureEnabled(.notifications, current: current),
+              !notificationID.isEmpty,
+              notificationID.count <= 512,
+              let plaintext = try? JSONEncoder().encode(NotificationReferencePayload(notificationId: notificationID)),
+              let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else { return }
+        current.send(PairingMessage(
+            kind: "notifications.dismiss",
+            sessionId: current.id,
+            messageId: UUID().uuidString.lowercased(),
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
+        diagnostics.record(category: "notification", event: "dismiss_sent")
+    }
+
+    private func performAndroidNotificationAction(
+        _ notificationID: String,
+        deviceID: String,
+        actionToken: String,
+        replyText: String?
+    ) {
+        guard case let .connected(connectedDeviceID, _) = state,
+              connectedDeviceID == deviceID,
+              let current = session,
+              current.remoteDeviceID == deviceID,
+              featureEnabled(.notifications, current: current),
+              !notificationID.isEmpty,
+              notificationID.count <= 512,
+              actionToken.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              (replyText?.count ?? 0) <= 4_096,
+              let plaintext = try? JSONEncoder().encode(NotificationActionCommandPayload(
+                notificationId: notificationID,
+                actionToken: actionToken,
+                replyText: replyText
+              )),
+              let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else { return }
+        current.send(PairingMessage(
+            kind: "notifications.action",
+            sessionId: current.id,
+            messageId: UUID().uuidString.lowercased(),
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
+        diagnostics.record(category: "notification", event: replyText == nil ? "action_sent" : "reply_sent")
+    }
+
+    private func receiveNotificationReference(_ message: PairingMessage, in current: Session) throws -> NotificationReferencePayload? {
+        guard case .connected = state,
+              message.sessionId == current.id,
+              let messageID = message.messageId,
+              current.acceptMessageID(messageID),
+              let nonce = message.nonce,
+              let ciphertext = message.ciphertext,
+              let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
+              let payload = try? JSONDecoder().decode(NotificationReferencePayload.self, from: plaintext),
+              !payload.notificationId.isEmpty,
+              payload.notificationId.count <= 512 else {
+            throw PairingError.invalidMessage
+        }
+        return payload
+    }
+
+    private func removeRemoteNotification(_ notificationID: String, deviceID: String) {
+        let identifier = remoteNotificationRequestIdentifier(deviceID: deviceID, notificationID: notificationID)
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        diagnostics.record(category: "notification", event: "removed_remotely")
     }
 
     private func saveTrust(_ current: Session) {

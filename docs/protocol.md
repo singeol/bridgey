@@ -180,13 +180,24 @@ whose local file policy is disabled can return `files.rejected` without
 decrypting or accepting the offer. It then resends `features.update` to repair
 stale UI state on the sender.
 
-### Notifications (`notifications.send.v1`)
+### Notifications (`notifications.send.v1`, `notifications.dismiss.v1`)
 
 `notifications.post` carries package, application name, opaque notification ID,
 title, text, timestamp, and an optional size-bounded icon reference. Content is
 sensitive and must not be logged. `source=bridgey` messages are never forwarded.
-Future `notification-actions.v1` messages will reference the opaque ID and an
-action token; v1 receivers must ignore them.
+`notifications.dismiss` carries the opaque notification ID back to Android when
+the user dismisses its mirrored macOS notification. `notifications.remove`
+carries the same ID to macOS when the original notification disappears on
+Android. Both reference payloads are encrypted, replay-protected, limited to a
+512-character opaque ID, and valid only for the authenticated device session.
+Clients that do not recognize these messages ignore them. Future
+`notification-actions.v1` messages reference the same opaque ID and a separately
+scoped, 64-character action token. A `notifications.post` may contain up to four
+actions with a 64-character title and `allowsReply` flag. macOS returns
+`notifications.action` with the notification ID, action token, and an optional
+reply of at most 4,096 characters. Android executes only tokens retained for the
+still-active source notification; arbitrary `PendingIntent` data never crosses
+the transport.
 
 In the current JSON transport, the notification payload is AES-GCM encrypted
 and contains `packageName`, `applicationName`, `notificationId`, `title`, `text`,

@@ -57,6 +57,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import org.json.JSONObject
+import org.json.JSONArray
 
 sealed interface PairingState {
     data object Idle : PairingState
@@ -327,6 +328,7 @@ class PairingCoordinator(
         title: String,
         text: String,
         timestamp: Long,
+        actions: List<ForwardedNotificationAction> = emptyList(),
     ) {
         if (!isFeatureAvailable(BridgeyFeature.NOTIFICATIONS)) return
         val connectedSession = session ?: return
@@ -340,6 +342,14 @@ class PairingCoordinator(
                 .put("title", title.take(1_024))
                 .put("text", text.take(8_192))
                 .put("timestamp", timestamp)
+                .put("actions", JSONArray().apply {
+                    actions.take(4).forEach { action ->
+                        put(JSONObject()
+                            .put("actionToken", action.token)
+                            .put("title", action.title.take(64))
+                            .put("allowsReply", action.allowsReply))
+                    }
+                })
                 .toString()
                 .toByteArray()
             val encrypted = Crypto.encrypt(connectedSession.pairingKey!!, payload)
@@ -355,6 +365,33 @@ class PairingCoordinator(
             ) {
                 android.util.Log.i("Bridgey", "PLUGIN notification sent package=$packageName")
             }
+        }
+    }
+
+    fun sendNotificationRemoved(notificationId: String) {
+        sendNotificationReference("notifications.remove", notificationId)
+    }
+
+    private fun sendNotificationReference(kind: String, notificationId: String) {
+        if (!isFeatureAvailable(BridgeyFeature.NOTIFICATIONS) || notificationId.isBlank()) return
+        val connectedSession = session ?: return
+        if (mutableState.value !is PairingState.Connected) return
+        scope.launch {
+            if (session !== connectedSession || mutableState.value !is PairingState.Connected) return@launch
+            val payload = JSONObject()
+                .put("notificationId", notificationId.take(512))
+                .toString()
+                .toByteArray()
+            val encrypted = Crypto.encrypt(connectedSession.pairingKey!!, payload)
+            connectedSession.send(
+                Message(
+                    kind = kind,
+                    sessionId = connectedSession.id,
+                    messageId = UUID.randomUUID().toString(),
+                    nonce = encrypted.nonce,
+                    ciphertext = encrypted.ciphertext,
+                ),
+            )
         }
     }
 
@@ -788,6 +825,8 @@ class PairingCoordinator(
                     callback(ClipboardSendResult.DISABLED)
                 }
             }
+            "notifications.dismiss" -> receiveNotificationDismiss(current, message)
+            "notifications.action" -> receiveNotificationAction(current, message)
             "find.start" -> receiveFindCommand(current, message, start = true)
             "find.stop" -> receiveFindCommand(current, message, start = false)
             "find.started" -> receiveFindAcknowledgement(current, message, started = true)
@@ -814,6 +853,52 @@ class PairingCoordinator(
             "files.cancel" -> receiveFileCancel(message.transferId)
             "files.cancel.ack" -> message.transferId?.let { removeFileTransfer(it, "Transfer cancelled") }
         }
+    }
+
+    private fun receiveNotificationDismiss(current: Session, message: Message) {
+        if (!settings.isEnabled(BridgeyFeature.NOTIFICATIONS, current.remoteDeviceId)) {
+            sendFeatureState()
+            return
+        }
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return fail("Invalid encrypted notification command"),
+            message.ciphertext ?: return fail("Invalid encrypted notification command"),
+        ) ?: return fail("Invalid encrypted notification command")
+        val notificationId = runCatching {
+            JSONObject(plaintext.toString(Charsets.UTF_8)).getString("notificationId")
+        }.getOrNull()?.takeIf { it.isNotBlank() && it.length <= 512 }
+            ?: return fail("Invalid notification command")
+        BridgeyNotificationListenerService.dismiss(notificationId)
+        diagnostics.record("notification", "dismiss_requested")
+    }
+
+    private fun receiveNotificationAction(current: Session, message: Message) {
+        if (!settings.isEnabled(BridgeyFeature.NOTIFICATIONS, current.remoteDeviceId)) {
+            sendFeatureState()
+            return
+        }
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return fail("Invalid encrypted notification action"),
+            message.ciphertext ?: return fail("Invalid encrypted notification action"),
+        ) ?: return fail("Invalid encrypted notification action")
+        val payload = runCatching { JSONObject(plaintext.toString(Charsets.UTF_8)) }.getOrNull()
+            ?: return fail("Invalid notification action")
+        val notificationId = payload.optString("notificationId")
+        val actionToken = payload.optString("actionToken")
+        val replyText = payload.optString("replyText").takeIf { payload.has("replyText") }
+        if (notificationId.isBlank() || notificationId.length > 512 ||
+            !actionToken.matches(Regex("[0-9a-f]{64}")) ||
+            (replyText?.length ?: 0) > 4_096) return fail("Invalid notification action")
+        BridgeyNotificationListenerService.perform(notificationId, actionToken, replyText)
+        diagnostics.record("notification", if (replyText == null) "action_requested" else "reply_requested")
     }
 
     private fun receiveClipboard(current: Session, message: Message, rich: Boolean) {

@@ -2,16 +2,39 @@ package dev.bridgey.android
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.security.MessageDigest
 
 class BridgeyNotificationListenerService : NotificationListenerService() {
+    private val forwardedNotifications = ForwardedNotificationRegistry()
+    private val storedActions = linkedMapOf<String, StoredNotificationAction>()
+    private val actionTokensByNotificationId = mutableMapOf<String, List<String>>()
+
+    override fun onDestroy() {
+        if (activeService?.get() === this) activeService = null
+        super.onDestroy()
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        activeService = java.lang.ref.WeakReference(this)
+        activeNotifications.orEmpty()
+            .filterNot { it.packageName == packageName }
+            .forEach { forwardedNotifications.record(notificationToken(it.key), it.key) }
         android.util.Log.i("Bridgey", "PLUGIN notification listener connected")
+    }
+
+    override fun onListenerDisconnected() {
+        if (activeService?.get() === this) activeService = null
+        super.onListenerDisconnected()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification, rankingMap: RankingMap) {
@@ -36,16 +59,147 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             packageManager.getApplicationLabel(info).toString()
         }.getOrDefault(sbn.packageName)
 
+        val notificationId = notificationToken(sbn.key)
+        forwardedNotifications.record(notificationId, sbn.key)
+        val actions = storeActions(notificationId, notification.actions.orEmpty())
         bridgey.pairing.sendNotification(
             packageName = sbn.packageName,
             applicationName = applicationName,
-            notificationId = listOf(sbn.packageName, sbn.id.toString(), sbn.tag.orEmpty()).joinToString(":"),
+            notificationId = notificationId,
             title = title,
             text = text,
             timestamp = sbn.postTime,
+            actions = actions,
         )
     }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        super.onNotificationRemoved(sbn)
+        val notificationId = forwardedNotifications.removeSystemKey(sbn.key) ?: return
+        removeActions(notificationId)
+        val bridgey = application as BridgeyApplication
+        if (!bridgey.isPrimaryUser || !bridgey.isBridgeyEnabled) return
+        bridgey.pairing.sendNotificationRemoved(notificationId)
+    }
+
+    private fun dismissForwardedNotification(notificationId: String): Boolean {
+        val systemKey = forwardedNotifications.systemKey(notificationId) ?: return false
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cancelNotification(systemKey) }
+        return true
+    }
+
+    @Synchronized
+    private fun storeActions(
+        notificationId: String,
+        actions: Array<out Notification.Action>,
+    ): List<ForwardedNotificationAction> {
+        removeActions(notificationId)
+        val forwarded = actions.take(MAX_FORWARDED_ACTIONS).mapIndexedNotNull { index, action ->
+            val title = action.title?.toString()?.trim().orEmpty().take(64)
+            val pendingIntent = action.actionIntent ?: return@mapIndexedNotNull null
+            if (title.isEmpty()) return@mapIndexedNotNull null
+            val remoteInputs = action.remoteInputs.orEmpty().filter(RemoteInput::getAllowFreeFormInput).toTypedArray()
+            val token = notificationActionToken(notificationId, index)
+            storedActions[token] = StoredNotificationAction(
+                notificationId = notificationId,
+                pendingIntent = pendingIntent,
+                remoteInputs = remoteInputs,
+            )
+            ForwardedNotificationAction(token = token, title = title, allowsReply = remoteInputs.isNotEmpty())
+        }
+        actionTokensByNotificationId[notificationId] = forwarded.map(ForwardedNotificationAction::token)
+        while (storedActions.size > MAX_STORED_ACTIONS) storedActions.remove(storedActions.keys.first())
+        return forwarded
+    }
+
+    @Synchronized
+    private fun removeActions(notificationId: String) {
+        actionTokensByNotificationId.remove(notificationId).orEmpty().forEach(storedActions::remove)
+    }
+
+    @Synchronized
+    private fun performAction(notificationId: String, actionToken: String, replyText: String?): Boolean {
+        val action = storedActions[actionToken]?.takeIf { it.notificationId == notificationId } ?: return false
+        if (replyText != null && action.remoteInputs.isEmpty()) return false
+        storedActions.remove(actionToken)
+        return runCatching {
+            if (replyText != null && action.remoteInputs.isNotEmpty()) {
+                val results = Bundle().apply {
+                    action.remoteInputs.forEach { putCharSequence(it.resultKey, replyText.take(MAX_REPLY_LENGTH)) }
+                }
+                val fillInIntent = Intent()
+                RemoteInput.addResultsToIntent(action.remoteInputs, fillInIntent, results)
+                action.pendingIntent.send(this, 0, fillInIntent)
+            } else {
+                action.pendingIntent.send()
+            }
+            true
+        }.getOrElse {
+            android.util.Log.w("Bridgey", "PLUGIN notification action failed", it)
+            false
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var activeService: java.lang.ref.WeakReference<BridgeyNotificationListenerService>? = null
+
+        fun dismiss(notificationId: String): Boolean {
+            val service = activeService?.get() ?: return false
+            return service.dismissForwardedNotification(notificationId)
+        }
+
+        fun perform(notificationId: String, actionToken: String, replyText: String?): Boolean {
+            val service = activeService?.get() ?: return false
+            return service.performAction(notificationId, actionToken, replyText)
+        }
+
+        private const val MAX_FORWARDED_ACTIONS = 4
+        private const val MAX_STORED_ACTIONS = 2_048
+        private const val MAX_REPLY_LENGTH = 4_096
+    }
 }
+
+data class ForwardedNotificationAction(
+    val token: String,
+    val title: String,
+    val allowsReply: Boolean,
+)
+
+private data class StoredNotificationAction(
+    val notificationId: String,
+    val pendingIntent: PendingIntent,
+    val remoteInputs: Array<RemoteInput>,
+)
+
+internal class ForwardedNotificationRegistry(private val limit: Int = 512) {
+    private val systemKeysByNotificationId = linkedMapOf<String, String>()
+
+    @Synchronized
+    fun record(notificationId: String, systemKey: String) {
+        systemKeysByNotificationId.remove(notificationId)
+        systemKeysByNotificationId[notificationId] = systemKey
+        while (systemKeysByNotificationId.size > limit) {
+            systemKeysByNotificationId.remove(systemKeysByNotificationId.keys.first())
+        }
+    }
+
+    @Synchronized
+    fun systemKey(notificationId: String): String? = systemKeysByNotificationId[notificationId]
+
+    @Synchronized
+    fun removeSystemKey(systemKey: String): String? {
+        val notificationId = systemKeysByNotificationId.entries.firstOrNull { it.value == systemKey }?.key ?: return null
+        systemKeysByNotificationId.remove(notificationId)
+        return notificationId
+    }
+}
+
+internal fun notificationToken(systemKey: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(systemKey.toByteArray(Charsets.UTF_8))
+    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+internal fun notificationActionToken(notificationId: String, index: Int): String = notificationToken("$notificationId\u0000$index")
 
 object NotificationAccess {
     fun isEnabled(context: Context): Boolean {
