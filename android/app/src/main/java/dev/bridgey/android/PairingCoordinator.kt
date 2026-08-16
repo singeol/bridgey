@@ -589,6 +589,14 @@ class PairingCoordinator(
 
     fun retryFileTransfer(transferId: String) {
         val uri = outgoingFileSources[transferId] ?: return
+        if (session == null || mutableState.value !is PairingState.Connected) {
+            removeFileTransfer(transferId, "Reconnect before retrying")
+            return
+        }
+        if (!isFeatureAvailable(BridgeyFeature.FILES)) {
+            removeFileTransfer(transferId, "File transfer is turned off on one of your devices")
+            return
+        }
         mutableFileTransfers.value = mutableFileTransfers.value.toMutableMap().apply { remove(transferId) }
         outgoingFileSources.remove(transferId)
         diagnostics.record("transfer", "retry_started")

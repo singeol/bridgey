@@ -592,6 +592,14 @@ final class PairingCoordinator: ObservableObject {
 
     func retryFileTransfer(id transferID: String) {
         guard let url = outgoingFileSources[transferID] else { return }
+        guard session != nil, case .connected = state else {
+            markFileTransferFinished(id: transferID, status: "Reconnect before retrying")
+            return
+        }
+        guard isFeatureAvailable(.files) else {
+            markFileTransferFinished(id: transferID, status: "File transfer is turned off on one of your devices")
+            return
+        }
         fileTransfers.removeValue(forKey: transferID)
         outgoingFileSources.removeValue(forKey: transferID)
         diagnostics.record(category: "transfer", event: "retry_started")
