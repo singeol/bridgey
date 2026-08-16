@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.os.IBinder
@@ -111,7 +112,8 @@ class BridgeyConnectionService : Service() {
             val cancelTransfer = PendingIntent.getService(
                 this,
                 notificationId,
-                Intent(this, BridgeyConnectionService::class.java)
+                Intent()
+                    .setComponent(ComponentName(this, BridgeyConnectionService::class.java))
                     .setAction(ACTION_CANCEL_TRANSFER)
                     .putExtra(EXTRA_TRANSFER_ID, transfer.id),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
@@ -144,7 +146,8 @@ class BridgeyConnectionService : Service() {
     private fun transferNotificationId(transferId: String) = 50_000 + (transferId.hashCode() and 0x0fff)
 
     private fun buildNotification(status: String): android.app.Notification {
-        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+        val openAppIntent = Intent()
+            .setComponent(ComponentName(this, MainActivity::class.java)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -155,7 +158,8 @@ class BridgeyConnectionService : Service() {
             openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val captureIntent = Intent(this, ClipboardCaptureActivity::class.java).apply {
+        val captureIntent = Intent()
+            .setComponent(ComponentName(this, ClipboardCaptureActivity::class.java)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_NEW_DOCUMENT or
                 Intent.FLAG_ACTIVITY_MULTIPLE_TASK or
@@ -170,13 +174,17 @@ class BridgeyConnectionService : Service() {
         val restoreNotification = PendingIntent.getService(
             this,
             3,
-            Intent(this, BridgeyConnectionService::class.java).setAction(ACTION_RESTORE_NOTIFICATION),
+            Intent()
+                .setComponent(ComponentName(this, BridgeyConnectionService::class.java))
+                .setAction(ACTION_RESTORE_NOTIFICATION),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val turnOff = PendingIntent.getService(
             this,
             4,
-            Intent(this, BridgeyConnectionService::class.java).setAction(ACTION_TURN_OFF),
+            Intent()
+                .setComponent(ComponentName(this, BridgeyConnectionService::class.java))
+                .setAction(ACTION_TURN_OFF),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = android.app.Notification.Builder(this, CHANNEL_ID)
@@ -207,7 +215,9 @@ class BridgeyConnectionService : Service() {
         val stop = PendingIntent.getService(
             this,
             5,
-            Intent(this, BridgeyConnectionService::class.java).setAction(ACTION_STOP_FINDING),
+            Intent()
+                .setComponent(ComponentName(this, BridgeyConnectionService::class.java))
+                .setAction(ACTION_STOP_FINDING),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return android.app.Notification.Builder(this, FIND_CHANNEL_ID)

@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -22,7 +23,8 @@ object ReceivedFileNotifier {
                 description = "Files received from paired Bridgey devices"
             },
         )
-        val intent = Intent(context, OpenReceivedFileActivity::class.java).apply {
+        val intent = Intent()
+            .setComponent(ComponentName(context, OpenReceivedFileActivity::class.java)).apply {
             data = uri
             putExtra(OpenReceivedFileActivity.EXTRA_MIME_TYPE, mimeType)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

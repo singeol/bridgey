@@ -117,8 +117,8 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var remoteFeatures = defaultRemoteFeatureState()
 
     var trustedDevices: [TrustedDeviceInfo] {
-        trustedDeviceIDs.map { id in
-            TrustedDeviceInfo(id: id, name: UserDefaults.standard.string(forKey: "trusted.\(id).name") ?? "Unknown device")
+        trustRegistry.devices.map { device in
+            TrustedDeviceInfo(id: device.id, name: device.name)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -126,6 +126,7 @@ final class PairingCoordinator: ObservableObject {
     private var deviceName: String
     private let settings: BridgeySettings
     private let identity: MacIdentity
+    private let trustRegistry: MacTrustRegistry
     private var listener: NWListener?
     private var session: Session?
     private var discoveryCancellable: AnyCancellable?
@@ -153,7 +154,9 @@ final class PairingCoordinator: ObservableObject {
         self.deviceName = deviceName
         self.settings = settings
         identity = MacIdentity()
-        trustedDeviceIDs = Set(UserDefaults.standard.stringArray(forKey: "trustedDeviceIDs") ?? [])
+        let trustRegistry = MacTrustRegistry()
+        self.trustRegistry = trustRegistry
+        trustedDeviceIDs = trustRegistry.deviceIDs
         UNUserNotificationCenter.current().delegate = notificationPresenter
         refreshNotificationAuthorization()
         startListener()
@@ -307,11 +310,8 @@ final class PairingCoordinator: ObservableObject {
     }
 
     func forget(deviceID: String) {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "trusted.\(deviceID).identityKey")
-        defaults.removeObject(forKey: "trusted.\(deviceID).name")
+        trustRegistry.remove(deviceID: deviceID)
         trustedDeviceIDs.remove(deviceID)
-        defaults.set(Array(trustedDeviceIDs), forKey: "trustedDeviceIDs")
         settings.removeDevice(deviceID)
         if case let .connected(connectedID, _) = state, connectedID == deviceID { dismiss() }
         NSLog("PAIRING revoked peerId=%@", String(deviceID.prefix(8)))
@@ -1187,7 +1187,7 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func trustedIdentityKey(_ deviceID: String) -> String? {
-        UserDefaults.standard.string(forKey: "trusted.\(deviceID).identityKey")
+        trustRegistry.identityKey(for: deviceID)
     }
 
     private func verifySignature(_ value: String, identityKey: String, data: Data) -> Bool {
@@ -1261,11 +1261,13 @@ final class PairingCoordinator: ObservableObject {
 
     private func saveTrust(_ current: Session) {
         guard let identityKey = current.remoteIdentityKey else { return }
-        let defaults = UserDefaults.standard
-        defaults.set(identityKey, forKey: "trusted.\(current.remoteDeviceID).identityKey")
-        defaults.set(current.peerName, forKey: "trusted.\(current.remoteDeviceID).name")
-        trustedDeviceIDs.insert(current.remoteDeviceID)
-        defaults.set(Array(trustedDeviceIDs), forKey: "trustedDeviceIDs")
+        if trustRegistry.remember(
+            deviceID: current.remoteDeviceID,
+            name: current.peerName,
+            identityKey: identityKey
+        ) {
+            trustedDeviceIDs.insert(current.remoteDeviceID)
+        }
     }
 
 }

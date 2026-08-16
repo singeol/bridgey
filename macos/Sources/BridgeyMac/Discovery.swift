@@ -10,13 +10,7 @@ enum LegacyPreferences {
         }
         let trustedIDs = legacy.stringArray(forKey: "trustedDeviceIDs") ?? []
         if !trustedIDs.isEmpty {
-            current.set(trustedIDs, forKey: "trustedDeviceIDs")
-            for id in trustedIDs {
-                for suffix in ["identityKey", "name"] {
-                    let key = "trusted.\(id).\(suffix)"
-                    if let value = legacy.string(forKey: key) { current.set(value, forKey: key) }
-                }
-            }
+            _ = MacTrustRegistry(migrating: [legacy])
         }
         current.set(true, forKey: "legacyPreferencesMigrated")
     }
