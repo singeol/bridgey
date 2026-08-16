@@ -1,20 +1,36 @@
-# Bridgey v0.4.3
+# Bridgey v0.5.0-alpha.1
 
-Bridgey v0.4.3 fixes Android diagnostic report sharing. Install this update on
-Android to send diagnostics to a connected Mac through Bridgey's file-transfer
-channel. Protocol compatibility with v0.4.x is unchanged.
+This is the first preview of Bridgey v0.5. Install the alpha on both Android
+and macOS to test synchronized notification state, action buttons, and inline
+replies. Keep v0.4.3 available if you need the current stable release.
 
-## Fixes and improvements
+## Notification improvements
 
-- Android now exports diagnostics as a real `Bridgey-Diagnostics.json` file
-  instead of placing the complete report in `EXTRA_TEXT`.
-- Choosing Bridgey in the Android share sheet now treats the diagnostic report
-  as a file, so it is not rejected by the 32 KiB clipboard limit.
-- Diagnostic files are shared from a private cache directory through a
-  non-exported `FileProvider` with temporary read access only.
-- The Settings action is now labelled **Share diagnostics file** to make the
-  behavior explicit.
+- Dismissing a mirrored notification on macOS now dismisses its active source
+  notification on Android.
+- Removing the original notification on Android removes its mirrored macOS
+  notification.
+- Up to four actions exposed by an Android notification can appear as native
+  macOS notification actions.
+- Android inline-reply actions become native macOS text-input actions and send
+  the reply through the originating Android `PendingIntent`.
+- Notification and action identifiers are opaque SHA-256 tokens. Android keeps
+  the underlying system keys and `PendingIntent` objects local and accepts an
+  action only while the source notification remains active.
+- Commands are encrypted, scoped to the authenticated device session, bounded,
+  and replay-protected.
 - This release requests no new permissions.
+
+## What to test
+
+1. Receive a dismissible Android notification and dismiss it from macOS.
+2. Receive another notification and dismiss it on Android.
+3. Test a regular action such as **Mark as read** when an application exposes it.
+4. Test **Reply** from a messaging notification and confirm that the response
+   reaches the conversation.
+
+Action availability varies by Android application. On macOS, notification
+actions may appear only after expanding or hovering over the notification.
 
 ## Downloads
 
@@ -23,20 +39,13 @@ channel. Protocol compatibility with v0.4.x is unchanged.
 - `Bridgey-macOS.zip` — alternative macOS archive.
 - `SHA256SUMS-*` — checksums for verifying downloads.
 
-## macOS installation note
-
-The macOS build remains ad-hoc signed because the project does not yet have a
-paid Apple Developer ID certificate. Copy Bridgey to Applications, then
-Control-click it and choose **Open**. If macOS still blocks it, use **System
-Settings → Privacy & Security → Open Anyway**.
-
 ## Known limitations
 
+- Per-application notification filters and private notification history are not
+  included in this first alpha.
+- Android does not expose a universal cross-application "read" operation;
+  Bridgey forwards only actions explicitly supplied by the source application.
 - Both devices must be reachable on the same local network.
-- Android requires an explicit user action to read and send its clipboard.
-- Clipboard payloads are limited to 32 KiB; larger text and diagnostics should
-  be sent as files.
-- Rich clipboard support currently preserves text and HTML, not images or files.
-- The macOS build is not notarized.
+- The macOS build remains ad-hoc signed and is not notarized.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).
