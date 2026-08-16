@@ -43,6 +43,12 @@ class ReliabilityTest {
             (0..6).map(::reconnectDelayMillis))
     }
 
+    @Test fun heartbeatTimeoutRequiresNegotiatedSupport() {
+        assertFalse(heartbeatExpired(false, lastReceivedAtMillis = 0, nowMillis = 60_000))
+        assertFalse(heartbeatExpired(true, lastReceivedAtMillis = 40_000, nowMillis = 60_000))
+        assertEquals(true, heartbeatExpired(true, lastReceivedAtMillis = 30_000, nowMillis = 60_000))
+    }
+
     @Test fun interruptedTransfersBecomeRecoverableHistory() {
         val active = FileTransferState("a", "one", "Sending", true, 42, 2, true)
         val complete = FileTransferState("b", "two", "Saved", false, 100, 1, false)

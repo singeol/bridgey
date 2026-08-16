@@ -37,6 +37,13 @@ internal fun reconnectDelayMillis(attempt: Int): Long {
     return min(1L shl boundedAttempt, 30L) * 1_000L
 }
 
+internal fun heartbeatExpired(
+    supported: Boolean,
+    lastReceivedAtMillis: Long,
+    nowMillis: Long,
+    timeoutMillis: Long = 30_000L,
+): Boolean = supported && nowMillis - lastReceivedAtMillis >= timeoutMillis
+
 internal fun recoverInterruptedTransfers(
     transfers: Map<String, FileTransferState>,
 ): Map<String, FileTransferState> = transfers

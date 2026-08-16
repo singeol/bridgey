@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import XCTest
 @testable import BridgeyMac
 
@@ -14,6 +15,19 @@ final class ReliabilityTests: XCTestCase {
 
     func testReconnectBackoffIsBounded() {
         XCTAssertEqual((0...6).map(reconnectDelay), [1, 2, 4, 8, 16, 30, 30])
+    }
+
+    func testHeartbeatTimeoutRequiresNegotiatedSupport() {
+        let now = Date(timeIntervalSince1970: 100)
+        XCTAssertFalse(heartbeatExpired(supported: false, lastReceivedAt: .distantPast, now: now))
+        XCTAssertFalse(heartbeatExpired(supported: true, lastReceivedAt: Date(timeIntervalSince1970: 80), now: now))
+        XCTAssertTrue(heartbeatExpired(supported: true, lastReceivedAt: Date(timeIntervalSince1970: 70), now: now))
+    }
+
+    func testLocalNetworkPermissionErrorsAreRecognized() {
+        XCTAssertTrue(localNetworkPermissionDenied(.posix(.EACCES)))
+        XCTAssertTrue(localNetworkPermissionDenied(.dns(-65570)))
+        XCTAssertFalse(localNetworkPermissionDenied(.posix(.ECONNREFUSED)))
     }
 
     func testInterruptedTransferBecomesHistoryEntry() {

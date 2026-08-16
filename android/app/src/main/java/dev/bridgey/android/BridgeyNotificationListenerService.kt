@@ -7,16 +7,21 @@ import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 
 class BridgeyNotificationListenerService : NotificationListenerService() {
     private val forwardedNotifications = ForwardedNotificationRegistry()
     private val storedActions = linkedMapOf<String, StoredNotificationAction>()
     private val actionTokensByNotificationId = mutableMapOf<String, List<String>>()
+    private val applicationIcons = linkedMapOf<String, String>()
 
     override fun onDestroy() {
         if (activeService?.get() === this) activeService = null
@@ -58,6 +63,7 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             val info = packageManager.getApplicationInfo(sbn.packageName, 0)
             packageManager.getApplicationLabel(info).toString()
         }.getOrDefault(sbn.packageName)
+        val applicationIcon = applicationIcon(sbn.packageName)
 
         val notificationId = notificationToken(sbn.key)
         forwardedNotifications.record(notificationId, sbn.key)
@@ -70,6 +76,7 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             text = text,
             timestamp = sbn.postTime,
             actions = actions,
+            applicationIcon = applicationIcon,
         )
     }
 
@@ -118,6 +125,28 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
     }
 
     @Synchronized
+    private fun applicationIcon(packageName: String): String? {
+        applicationIcons[packageName]?.let { return it }
+        val drawable = runCatching { packageManager.getApplicationIcon(packageName) }.getOrNull() ?: return null
+        val encoded = ICON_SIZES.firstNotNullOfOrNull { size ->
+            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, size, size)
+            drawable.draw(canvas)
+            val bytes = ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                output.toByteArray()
+            }
+            bitmap.recycle()
+            bytes.takeIf { it.size <= MAX_ICON_BYTES }
+                ?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+        } ?: return null
+        applicationIcons[packageName] = encoded
+        while (applicationIcons.size > MAX_CACHED_ICONS) applicationIcons.remove(applicationIcons.keys.first())
+        return encoded
+    }
+
+    @Synchronized
     private fun performAction(notificationId: String, actionToken: String, replyText: String?): Boolean {
         val action = storedActions[actionToken]?.takeIf { it.notificationId == notificationId } ?: return false
         if (replyText != null && action.remoteInputs.isEmpty()) return false
@@ -157,6 +186,9 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         private const val MAX_FORWARDED_ACTIONS = 4
         private const val MAX_STORED_ACTIONS = 2_048
         private const val MAX_REPLY_LENGTH = 4_096
+        private const val MAX_ICON_BYTES = 20 * 1024
+        private const val MAX_CACHED_ICONS = 128
+        private val ICON_SIZES = listOf(64, 48, 32)
     }
 }
 

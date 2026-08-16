@@ -1,37 +1,35 @@
-# Bridgey v0.5.0-alpha.2
+# Bridgey v0.5.0-alpha.3
 
-This second Bridgey v0.5 preview fixes the generic icon shown on forwarded
-macOS notifications. Install the alpha on both Android and macOS to continue
-testing synchronized notification state, action buttons, and inline replies.
+This third Bridgey v0.5 preview improves mirrored notification identity and
+connection recovery. Install alpha.3 on both Android and macOS to test the new
+encrypted source-app icons and heartbeat protocol.
 
-## Changes since alpha.1
+## Changes since alpha.2
 
-- The macOS package now compiles the Bridgey app icon into `Assets.car`, which
-  current macOS versions use in Notification Center and other system UI.
-- `Bridgey.icns` remains bundled for compatibility with macOS 13–15.
-- The bundle now declares both the modern `CFBundleIconName` and compatible
-  `CFBundleIconFile` metadata.
-- The build fails on full-Xcode runners if the modern icon catalog is not
-  produced, while machines with Command Line Tools only retain the compatible
-  ICNS fallback.
+- Android now renders the source application's icon as a small, bounded PNG and
+  sends it inside the existing encrypted notification payload.
+- macOS validates the PNG, stores it in a content-addressed cache, and presents
+  it as a native notification attachment. Payloads from older clients remain
+  compatible and simply omit the attachment.
+- Ad-hoc macOS packages now carry an explicit stable designated requirement for
+  `dev.bridgey.mac`. This gives Notification Center and Local Network privacy a
+  stable application identity across unsigned preview updates.
+- Both clients negotiate an encrypted-session heartbeat. Once negotiated, a
+  dead connection is detected within about 30 seconds instead of leaving
+  Android stuck on a stale `Connected` state.
+- macOS now recognizes the system's Local Network policy-denied error, stops
+  misleading reconnect attempts, explains the required permission, and offers
+  a shortcut to the corresponding System Settings pane.
+- Added unit coverage for notification icon validation and naming, heartbeat
+  compatibility and timeout behavior, and Local Network error recognition.
 - This release requests no new permissions.
 
-## Notification features under test
+## Notification icon behavior
 
-- Dismissing a mirrored notification on macOS dismisses its active source
-  notification on Android.
-- Removing the original notification on Android removes its mirrored macOS
-  notification.
-- Up to four actions exposed by an Android notification can appear as native
-  macOS notification actions.
-- Android inline-reply actions become native macOS text-input actions and send
-  the reply through the originating Android `PendingIntent`.
-- Notification and action identifiers are encrypted, scoped, bounded,
-  replay-protected opaque tokens.
-
-macOS always uses Bridgey's own bundle icon in the leading notification-icon
-position. The public notification API does not allow Bridgey to replace it with
-the source Android application's icon.
+macOS reserves the leading icon slot for Bridgey, the application that creates
+the local notification. The originating Android application's icon is supplied
+as the notification's native media attachment; expand the notification if the
+current macOS presentation style does not show attachments in its compact view.
 
 ## Downloads
 
@@ -47,6 +45,7 @@ the source Android application's icon.
 - Android does not expose a universal cross-application "read" operation;
   Bridgey forwards only actions explicitly supplied by the source application.
 - Both devices must be reachable on the same local network.
-- The macOS build remains ad-hoc signed and is not notarized.
+- The macOS build remains ad-hoc signed and is not notarized until Developer ID
+  credentials are configured.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).

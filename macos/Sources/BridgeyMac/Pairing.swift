@@ -64,6 +64,7 @@ private struct RemoteNotificationPayload: Codable {
     let text: String
     let timestamp: Int64
     let actions: [RemoteNotificationActionPayload]?
+    let applicationIcon: String?
 }
 
 private struct RemoteNotificationActionPayload: Codable {
@@ -169,6 +170,7 @@ final class PairingCoordinator: ObservableObject {
     private var settingsCancellable: AnyCancellable?
     private var reconnectWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
+    private var heartbeatWorkItem: DispatchWorkItem?
     private var lastTrustedEndpoint: (host: String, port: Int, name: String)?
     private var reconnectAttempt = 0
     private var clipboardHotKey: GlobalHotKey?
@@ -346,6 +348,7 @@ final class PairingCoordinator: ObservableObject {
 
     func cancel() {
         connectionTimeoutWorkItem?.cancel()
+        heartbeatWorkItem?.cancel()
         let current = session
         session = nil
         current?.send(PairingMessage(kind: "pairing.cancel", sessionId: current?.id ?? ""))
@@ -359,6 +362,7 @@ final class PairingCoordinator: ObservableObject {
 
     func dismiss() {
         connectionTimeoutWorkItem?.cancel()
+        heartbeatWorkItem?.cancel()
         let current = session
         session = nil
         current?.close()
@@ -756,6 +760,7 @@ final class PairingCoordinator: ObservableObject {
         current.onFailure = { [weak self, weak current] in
             guard let self, self.session === current else { return }
             self.connectionTimeoutWorkItem?.cancel()
+            self.heartbeatWorkItem?.cancel()
             self.cancelIncomingFiles()
             self.clearClipboardSendStatus()
             if !self.outgoingFiles.isEmpty {
@@ -775,9 +780,9 @@ final class PairingCoordinator: ObservableObject {
                 self.state = .failed("Pairing connection lost")
             }
         }
-        current.connection.stateUpdateHandler = { [weak current] newState in
+        current.connection.stateUpdateHandler = { [weak self, weak current] newState in
             DispatchQueue.main.async {
-                guard let current else { return }
+                guard let self, let current else { return }
                 switch newState {
                 case .ready:
                     NSLog("TRANSPORT connected")
@@ -785,6 +790,14 @@ final class PairingCoordinator: ObservableObject {
                     onReady()
                 case .failed, .cancelled:
                     current.onFailure?()
+                case let .waiting(error) where localNetworkPermissionDenied(error):
+                    guard self.session === current else { return }
+                    self.connectionTimeoutWorkItem?.cancel()
+                    self.heartbeatWorkItem?.cancel()
+                    self.session = nil
+                    current.close()
+                    self.state = .failed("Local Network access is off. Enable Bridgey in System Settings → Privacy & Security → Local Network.")
+                    self.diagnostics.record(category: "transport", event: "local_network_denied", outcome: "permission_required")
                 default:
                     break
                 }
@@ -796,6 +809,13 @@ final class PairingCoordinator: ObservableObject {
     private func receive(_ message: PairingMessage, in current: Session) {
         do {
             switch message.kind {
+            case "heartbeat.ping":
+                guard message.sessionId == current.id, case .connected = state else { return }
+                current.heartbeatSupported = true
+                current.send(PairingMessage(kind: "heartbeat.pong", sessionId: current.id, messageId: message.messageId))
+            case "heartbeat.pong":
+                guard message.sessionId == current.id, case .connected = state else { return }
+                current.heartbeatSupported = true
             case "pairing.offer":
                 guard let publicKey = message.publicKey else { throw PairingError.invalidMessage }
                 current.id = message.sessionId
@@ -1162,6 +1182,7 @@ final class PairingCoordinator: ObservableObject {
             reconnectAttempt = 0
             reconnectWorkItem?.cancel()
             sendFeatureState()
+            scheduleHeartbeat(for: current)
             NSLog("PAIRING verified peer=%@", current.peerName)
         }
     }
@@ -1307,6 +1328,26 @@ final class PairingCoordinator: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: timeout)
     }
 
+    private func scheduleHeartbeat(for current: Session) {
+        heartbeatWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self, weak current] in
+            guard let self, let current, self.session === current, case .connected = self.state else { return }
+            if heartbeatExpired(supported: current.heartbeatSupported, lastReceivedAt: current.lastReceivedAt) {
+                NSLog("TRANSPORT heartbeat timed out")
+                current.close()
+                return
+            }
+            current.send(PairingMessage(
+                kind: "heartbeat.ping",
+                sessionId: current.id,
+                messageId: UUID().uuidString.lowercased()
+            ))
+            self.scheduleHeartbeat(for: current)
+        }
+        heartbeatWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
     private func postNotification(_ payload: RemoteNotificationPayload, deviceID: String) {
         let content = UNMutableNotificationContent()
         content.title = payload.applicationName
@@ -1314,6 +1355,9 @@ final class PairingCoordinator: ObservableObject {
         content.body = payload.text
         content.sound = .default
         content.categoryIdentifier = notificationCategoryIdentifier(for: payload, deviceID: deviceID)
+        if let attachment = notificationIconAttachment(for: payload) {
+            content.attachments = [attachment]
+        }
         content.userInfo = [
             "androidPackage": payload.packageName,
             "androidNotificationId": payload.notificationId,
@@ -1330,6 +1374,28 @@ final class PairingCoordinator: ObservableObject {
             } else {
                 NSLog("PLUGIN notification received package=%@", payload.packageName)
             }
+        }
+    }
+
+    private func notificationIconAttachment(for payload: RemoteNotificationPayload) -> UNNotificationAttachment? {
+        guard let data = remoteNotificationIconData(payload.applicationIcon) else { return nil }
+        let fileManager = FileManager.default
+        guard let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let directory = caches.appendingPathComponent("Bridgey/NotificationIcons", isDirectory: true)
+        let file = directory.appendingPathComponent(
+            remoteNotificationIconFileName(packageName: payload.packageName, data: data)
+        )
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !fileManager.fileExists(atPath: file.path) { try data.write(to: file, options: .atomic) }
+            return try UNNotificationAttachment(
+                identifier: "android-app-icon",
+                url: file,
+                options: [UNNotificationAttachmentOptionsTypeHintKey: UTType.png.identifier]
+            )
+        } catch {
+            NSLog("PLUGIN notification icon attachment failed package=%@ error=%@", payload.packageName, String(describing: error))
+            return nil
         }
     }
 
@@ -1471,6 +1537,8 @@ private final class Session {
     var pairingKey: Data?
     var localConfirmed = false
     var remoteConfirmed = false
+    var lastReceivedAt = Date()
+    var heartbeatSupported = false
     var onMessage: ((PairingMessage) -> Void)?
     var onFailure: (() -> Void)?
     private var buffer = Data()
@@ -1510,6 +1578,7 @@ private final class Session {
                     self.buffer.removeSubrange(...newline)
                     do {
                         let message = try decodeProtocolMessage(Data(line))
+                        self.lastReceivedAt = Date()
                         self.onMessage?(message)
                     } catch {
                         NSLog("TRANSPORT invalid message error=%@", String(describing: error))

@@ -46,7 +46,12 @@ fi
 if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
   codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
 else
-  codesign --force --deep --sign - "$APP_PATH"
+  # Keep an explicit, stable designated requirement for ad-hoc builds. System
+  # services such as Notification Center and Local Network privacy otherwise
+  # see only a changing code hash after each update and can lose bundle metadata.
+  codesign --force --deep --sign - \
+    --requirements '=designated => identifier "dev.bridgey.mac"' \
+    "$APP_PATH"
 fi
 
 echo "$APP_PATH"

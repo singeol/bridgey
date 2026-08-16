@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 let maximumProtocolFrameBytes = 65_536
 let maximumTransferHistory = 20
@@ -6,6 +7,22 @@ let maximumTransferHistory = 20
 func reconnectDelay(attempt: Int) -> TimeInterval {
     let boundedAttempt = min(max(attempt, 0), 30)
     return min(pow(2.0, Double(boundedAttempt)), 30.0)
+}
+
+func heartbeatExpired(
+    supported: Bool,
+    lastReceivedAt: Date,
+    now: Date = Date(),
+    timeout: TimeInterval = 30
+) -> Bool {
+    supported && now.timeIntervalSince(lastReceivedAt) >= timeout
+}
+
+func localNetworkPermissionDenied(_ error: NWError) -> Bool {
+    switch error {
+    case .posix(.EACCES), .dns(-65570): true
+    default: false
+    }
 }
 
 func decodeProtocolMessage(_ data: Data) throws -> PairingMessage {

@@ -317,7 +317,14 @@ private struct BridgeyPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Couldn’t connect", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
             Text(message).font(.caption).foregroundStyle(.secondary)
-            Button("Dismiss") { pairing.cancel() }
+            HStack {
+                if message.contains("Local Network") {
+                    Button("Open Local Network Settings") {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")!)
+                    }
+                }
+                Button("Dismiss") { pairing.cancel() }
+            }
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))

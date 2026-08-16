@@ -23,6 +23,7 @@ import java.io.OutputStream
 import java.math.BigInteger
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
 import java.security.KeyPair
@@ -329,6 +330,7 @@ class PairingCoordinator(
         text: String,
         timestamp: Long,
         actions: List<ForwardedNotificationAction> = emptyList(),
+        applicationIcon: String? = null,
     ) {
         if (!isFeatureAvailable(BridgeyFeature.NOTIFICATIONS)) return
         val connectedSession = session ?: return
@@ -342,6 +344,11 @@ class PairingCoordinator(
                 .put("title", title.take(1_024))
                 .put("text", text.take(8_192))
                 .put("timestamp", timestamp)
+                .apply {
+                    if (applicationIcon != null && applicationIcon.length <= MAX_NOTIFICATION_ICON_BASE64_LENGTH) {
+                        put("applicationIcon", applicationIcon)
+                    }
+                }
                 .put("actions", JSONArray().apply {
                     actions.take(4).forEach { action ->
                         put(JSONObject()
@@ -710,6 +717,7 @@ class PairingCoordinator(
         session?.close()
         socket.keepAlive = true
         socket.tcpNoDelay = true
+        socket.soTimeout = HEARTBEAT_INTERVAL_MILLIS.toInt()
         val current = Session(socket)
         current.initiatedLocally = initiatedLocally
         session = current
@@ -731,8 +739,30 @@ class PairingCoordinator(
         }
         val result = runCatching {
             while (true) {
-                val line = current.input.readProtocolLine() ?: break
-                receive(current, Message.decode(line))
+                try {
+                    val line = current.input.readProtocolLine() ?: break
+                    current.lastReceivedAtMillis = SystemClock.elapsedRealtime()
+                    receive(current, Message.decode(line))
+                } catch (_: SocketTimeoutException) {
+                    if (session !== current) break
+                    if (mutableState.value is PairingState.Connected) {
+                        if (heartbeatExpired(
+                                supported = current.heartbeatSupported,
+                                lastReceivedAtMillis = current.lastReceivedAtMillis,
+                                nowMillis = SystemClock.elapsedRealtime(),
+                            )
+                        ) {
+                            android.util.Log.w("Bridgey", "TRANSPORT heartbeat timed out")
+                            break
+                        }
+                        if (!current.send(Message(
+                                kind = "heartbeat.ping",
+                                sessionId = current.id,
+                                messageId = UUID.randomUUID().toString(),
+                            ))
+                        ) break
+                    }
+                }
             }
         }
         if (session === current && mutableState.value is PairingState.Connected) {
@@ -754,6 +784,16 @@ class PairingCoordinator(
 
     private fun receive(current: Session, message: Message) {
         when (message.kind) {
+            "heartbeat.ping" -> {
+                if (message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
+                current.heartbeatSupported = true
+                current.send(Message(kind = "heartbeat.pong", sessionId = current.id, messageId = message.messageId))
+            }
+            "heartbeat.pong" -> {
+                if (message.sessionId == current.id && mutableState.value is PairingState.Connected) {
+                    current.heartbeatSupported = true
+                }
+            }
             "pairing.offer" -> {
                 current.id = message.sessionId
                 current.peerName = message.deviceName ?: "Android device"
@@ -1225,6 +1265,8 @@ class PairingCoordinator(
         fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith { true }
         const val FILE_CHUNK_SIZE = 24 * 1024
         const val MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024
+        const val MAX_NOTIFICATION_ICON_BASE64_LENGTH = 28 * 1024
+        const val HEARTBEAT_INTERVAL_MILLIS = 10_000L
     }
 
     private class Session(private val socket: Socket) {
@@ -1242,6 +1284,8 @@ class PairingCoordinator(
         var pairingKey: ByteArray? = null
         var localConfirmed = false
         var remoteConfirmed = false
+        @Volatile var lastReceivedAtMillis = SystemClock.elapsedRealtime()
+        @Volatile var heartbeatSupported = false
         private val seenMessageIds = LinkedHashSet<String>()
 
         @Synchronized fun send(message: Message): Boolean {
