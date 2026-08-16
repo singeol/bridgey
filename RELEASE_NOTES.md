@@ -1,12 +1,24 @@
-# Bridgey v0.5.0-alpha.1
+# Bridgey v0.5.0-alpha.2
 
-This is the first preview of Bridgey v0.5. Install the alpha on both Android
-and macOS to test synchronized notification state, action buttons, and inline
-replies. Keep v0.4.3 available if you need the current stable release.
+This second Bridgey v0.5 preview fixes the generic icon shown on forwarded
+macOS notifications. Install the alpha on both Android and macOS to continue
+testing synchronized notification state, action buttons, and inline replies.
 
-## Notification improvements
+## Changes since alpha.1
 
-- Dismissing a mirrored notification on macOS now dismisses its active source
+- The macOS package now compiles the Bridgey app icon into `Assets.car`, which
+  current macOS versions use in Notification Center and other system UI.
+- `Bridgey.icns` remains bundled for compatibility with macOS 13–15.
+- The bundle now declares both the modern `CFBundleIconName` and compatible
+  `CFBundleIconFile` metadata.
+- The build fails on full-Xcode runners if the modern icon catalog is not
+  produced, while machines with Command Line Tools only retain the compatible
+  ICNS fallback.
+- This release requests no new permissions.
+
+## Notification features under test
+
+- Dismissing a mirrored notification on macOS dismisses its active source
   notification on Android.
 - Removing the original notification on Android removes its mirrored macOS
   notification.
@@ -14,23 +26,12 @@ replies. Keep v0.4.3 available if you need the current stable release.
   macOS notification actions.
 - Android inline-reply actions become native macOS text-input actions and send
   the reply through the originating Android `PendingIntent`.
-- Notification and action identifiers are opaque SHA-256 tokens. Android keeps
-  the underlying system keys and `PendingIntent` objects local and accepts an
-  action only while the source notification remains active.
-- Commands are encrypted, scoped to the authenticated device session, bounded,
-  and replay-protected.
-- This release requests no new permissions.
+- Notification and action identifiers are encrypted, scoped, bounded,
+  replay-protected opaque tokens.
 
-## What to test
-
-1. Receive a dismissible Android notification and dismiss it from macOS.
-2. Receive another notification and dismiss it on Android.
-3. Test a regular action such as **Mark as read** when an application exposes it.
-4. Test **Reply** from a messaging notification and confirm that the response
-   reaches the conversation.
-
-Action availability varies by Android application. On macOS, notification
-actions may appear only after expanding or hovering over the notification.
+macOS always uses Bridgey's own bundle icon in the leading notification-icon
+position. The public notification API does not allow Bridgey to replace it with
+the source Android application's icon.
 
 ## Downloads
 
@@ -42,7 +43,7 @@ actions may appear only after expanding or hovering over the notification.
 ## Known limitations
 
 - Per-application notification filters and private notification history are not
-  included in this first alpha.
+  included in this alpha.
 - Android does not expose a universal cross-application "read" operation;
   Bridgey forwards only actions explicitly supplied by the source application.
 - Both devices must be reachable on the same local network.
