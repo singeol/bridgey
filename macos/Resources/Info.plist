@@ -15,7 +15,9 @@
 	<key>CFBundleDisplayName</key>
 	<string>Bridgey</string>
 	<key>CFBundleIconFile</key>
-	<string>Bridgey</string>
+	<string>Bridgey.icns</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Bridgey discovers and connects to your paired Android devices on your local network.</string>
     <key>NSBonjourServices</key>

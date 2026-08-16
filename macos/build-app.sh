@@ -23,6 +23,26 @@ done
 python3 ./create-icns.py \
   "Resources/AppIcon.iconset" \
   "$APP_PATH/Contents/Resources/Bridgey.icns"
+
+# macOS 26 prefers an app icon compiled into Assets.car, while older releases
+# still use Bridgey.icns. Build both from the same reviewed source images.
+if xcrun --find actool >/dev/null 2>&1; then
+  ASSET_CATALOG="$CACHE_ROOT/BridgeyAssets.xcassets"
+  APP_ICON_SET="$ASSET_CATALOG/AppIcon.appiconset"
+  rm -rf "$ASSET_CATALOG"
+  mkdir -p "$APP_ICON_SET"
+  cp Resources/AppIcon.iconset/*.png "$APP_ICON_SET/"
+  cp Resources/AppIconContents.json "$APP_ICON_SET/Contents.json"
+  xcrun actool "$ASSET_CATALOG" \
+    --compile "$APP_PATH/Contents/Resources" \
+    --platform macosx \
+    --minimum-deployment-target 13.0 \
+    --app-icon AppIcon \
+    --output-partial-info-plist "$CACHE_ROOT/BridgeyAppIcon.plist"
+  test -f "$APP_PATH/Contents/Resources/Assets.car"
+else
+  echo "warning: actool is unavailable; keeping the compatible Bridgey.icns icon only" >&2
+fi
 if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
   codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
 else
