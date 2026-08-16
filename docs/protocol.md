@@ -132,6 +132,11 @@ authenticated session already binds them to the paired sender.
 Receivers validate the hash, remember `(originDeviceId, contentHash, id)`, then
 write the clipboard. A platform callback matching a remembered remote write is
 suppressed. Identical local content within the bounded cache is not resent.
+The current transport replies with `clipboard.ack` after the write. If local
+policy disabled clipboard handling while a peer still had stale capability
+state, it replies with `clipboard.rejected` and immediately resends the
+encrypted `features.update`; senders time out rather than displaying an
+unbounded sending state.
 
 ### Files (`files.v1`)
 
@@ -161,6 +166,10 @@ For Mac-to-Android transfers, Android sends cumulative `files.chunk.ack`
 messages and macOS keeps at most 64 chunks (1.5 MiB) unacknowledged. This bounds
 memory and cancellation latency without limiting throughput to one network
 round trip per chunk.
+An offer repeats its transfer ID in the outer session message so a receiver
+whose local file policy is disabled can return `files.rejected` without
+decrypting or accepting the offer. It then resends `features.update` to repair
+stale UI state on the sender.
 
 ### Notifications (`notifications.send.v1`)
 

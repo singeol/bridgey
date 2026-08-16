@@ -116,6 +116,8 @@ final class PairingCoordinator: ObservableObject {
     private var lastTrustedEndpoint: (host: String, port: Int, name: String)?
     private var reconnectAttempt = 0
     private var clipboardHotKey: GlobalHotKey?
+    private var clipboardSendID: String?
+    private var clipboardTimeoutWorkItem: DispatchWorkItem?
     private let notificationPresenter = NotificationPresenter()
     private var incomingFiles: [String: IncomingFileTransfer] = [:]
     private var outgoingFiles: [String: OutgoingFileTransfer] = [:]
@@ -147,7 +149,7 @@ final class PairingCoordinator: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
-                    if !self.featureEnabled(.clipboard) { self.clipboardStatus = nil }
+                    if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     self.sendFeatureState()
                 }
             }
@@ -264,6 +266,7 @@ final class PairingCoordinator: ObservableObject {
         current?.close()
         stopMacSound()
         androidRinging = false
+        clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
     }
@@ -276,6 +279,7 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         remoteBattery = nil
+        clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
     }
@@ -321,15 +325,35 @@ final class PairingCoordinator: ObservableObject {
             clipboardStatus = "Encryption failed"
             return
         }
+        let messageID = UUID().uuidString.lowercased()
         current.send(PairingMessage(
             kind: "clipboard.update",
             sessionId: current.id,
-            messageId: UUID().uuidString.lowercased(),
+            messageId: messageID,
             nonce: encrypted.nonce,
             ciphertext: encrypted.ciphertext
         ))
+        clipboardTimeoutWorkItem?.cancel()
+        clipboardSendID = messageID
         clipboardStatus = "Sending…"
+        let timeout = DispatchWorkItem { [weak self, weak current] in
+            guard let self, let current, self.session === current,
+                  self.clipboardSendID == messageID else { return }
+            self.clipboardSendID = nil
+            self.clipboardTimeoutWorkItem = nil
+            self.clipboardStatus = "No delivery acknowledgement"
+            self.sendFeatureState()
+        }
+        clipboardTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: timeout)
         NSLog("PLUGIN clipboard sent")
+    }
+
+    private func clearClipboardSendStatus() {
+        clipboardTimeoutWorkItem?.cancel()
+        clipboardTimeoutWorkItem = nil
+        clipboardSendID = nil
+        clipboardStatus = nil
     }
 
     func findAndroid() {
@@ -468,6 +492,7 @@ final class PairingCoordinator: ObservableObject {
                             kind: "files.offer",
                             sessionId: current.id,
                             messageId: UUID().uuidString.lowercased(),
+                            transferId: transfer.transferID,
                             nonce: encrypted.nonce,
                             ciphertext: encrypted.ciphertext
                         ))
@@ -563,6 +588,7 @@ final class PairingCoordinator: ObservableObject {
             guard let self, self.session === current else { return }
             self.connectionTimeoutWorkItem?.cancel()
             self.cancelIncomingFiles()
+            self.clearClipboardSendStatus()
             if !self.outgoingFiles.isEmpty {
                 self.outgoingFiles.values.forEach { $0.cancel() }
                 self.outgoingFiles.removeAll()
@@ -672,13 +698,25 @@ final class PairingCoordinator: ObservableObject {
                     ($0, payload.features[$0.rawValue]!)
                 })
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
-                if remoteFeatures[.clipboard] == false { clipboardStatus = nil }
+                if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
+                if remoteFeatures[.files] == false && fileTransferActive {
+                    cancelFileTransfer()
+                    fileTransferStatus = nil
+                }
                 if remoteFeatures[.findDevice] == false {
                     stopMacSound()
                     androidRinging = false
                 }
             case "clipboard.update":
-                guard featureEnabled(.clipboard, current: current) else { return }
+                guard featureEnabled(.clipboard, current: current) else {
+                    current.send(PairingMessage(
+                        kind: "clipboard.rejected",
+                        sessionId: current.id,
+                        messageId: message.messageId
+                    ))
+                    sendFeatureState()
+                    return
+                }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -694,8 +732,18 @@ final class PairingCoordinator: ObservableObject {
                 NSLog("PLUGIN clipboard received")
                 current.send(PairingMessage(kind: "clipboard.ack", sessionId: current.id, messageId: messageID))
             case "clipboard.ack":
+                guard message.messageId == clipboardSendID else { return }
+                clipboardTimeoutWorkItem?.cancel()
+                clipboardTimeoutWorkItem = nil
+                clipboardSendID = nil
                 clipboardStatus = "Delivered"
                 NSLog("PLUGIN clipboard acknowledged")
+            case "clipboard.rejected":
+                guard message.messageId == clipboardSendID else { return }
+                clipboardTimeoutWorkItem?.cancel()
+                clipboardTimeoutWorkItem = nil
+                clipboardSendID = nil
+                clipboardStatus = "Clipboard is turned off on Android"
             case "find.start":
                 try receiveFindCommand(message, in: current, start: true)
             case "find.stop":
@@ -736,7 +784,15 @@ final class PairingCoordinator: ObservableObject {
                 }
                 postNotification(payload)
             case "files.offer":
-                guard featureEnabled(.files, current: current) else { return }
+                guard featureEnabled(.files, current: current) else {
+                    current.send(PairingMessage(
+                        kind: "files.rejected",
+                        sessionId: current.id,
+                        transferId: message.transferId
+                    ))
+                    sendFeatureState()
+                    return
+                }
                 guard case .connected = state,
                       message.sessionId == current.id,
                       let messageID = message.messageId,
@@ -863,6 +919,16 @@ final class PairingCoordinator: ObservableObject {
                         }
                     }
                 )
+            case "files.rejected":
+                guard let transferID = message.transferId,
+                      let transfer = outgoingFiles.removeValue(forKey: transferID) else { return }
+                transfer.cancel()
+                markTransferCancelled(transferID)
+                fileTransfers.removeValue(forKey: transferID)
+                fileTransferActive = fileTransfers.values.contains(where: { $0.active })
+                fileOperationID = nil
+                filePreparationCancellation = nil
+                fileTransferStatus = "File transfer is turned off on Android"
             case "files.complete.ack":
                 guard let transferID = message.transferId,
                       let transfer = outgoingFiles.removeValue(forKey: transferID) else { return }

@@ -479,6 +479,7 @@ class PairingCoordinator(
                     kind = "files.offer",
                     sessionId = connectedSession.id,
                     messageId = UUID.randomUUID().toString(),
+                    transferId = transferId,
                     nonce = offer.nonce,
                     ciphertext = offer.ciphertext,
                 ))) {
@@ -701,7 +702,11 @@ class PairingCoordinator(
             "pairing.cancel" -> cancel()
             "features.update" -> receiveFeatureState(current, message)
             "clipboard.update" -> {
-                if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) return
+                if (!settings.isEnabled(BridgeyFeature.CLIPBOARD, current.remoteDeviceId)) {
+                    current.send(Message(kind = "clipboard.rejected", sessionId = current.id, messageId = message.messageId))
+                    sendFeatureState()
+                    return
+                }
                 if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
                 val messageId = message.messageId ?: return
                 if (!current.acceptMessageId(messageId)) return
@@ -723,13 +728,32 @@ class PairingCoordinator(
                     android.util.Log.i("Bridgey", "PLUGIN clipboard acknowledged")
                 }
             }
+            "clipboard.rejected" -> {
+                val messageId = message.messageId ?: return
+                pendingClipboardSends.remove(messageId)?.let { callback ->
+                    mutableClipboardStatus.value = "Clipboard is turned off on Mac"
+                    callback(ClipboardSendResult.DISABLED)
+                }
+            }
             "find.start" -> receiveFindCommand(current, message, start = true)
             "find.stop" -> receiveFindCommand(current, message, start = false)
             "find.started" -> receiveFindAcknowledgement(current, message, started = true)
             "find.stopped" -> receiveFindAcknowledgement(current, message, started = false)
             "files.accept" -> message.transferId?.let { pendingFileAccepts.remove(it)?.complete(true) }
             "files.complete.ack" -> message.transferId?.let { pendingFileCompletions.remove(it)?.complete(true) }
-            "files.offer" -> if (settings.isEnabled(BridgeyFeature.FILES, current.remoteDeviceId)) receiveFileOffer(current, message)
+            "files.offer" -> {
+                if (settings.isEnabled(BridgeyFeature.FILES, current.remoteDeviceId)) {
+                    receiveFileOffer(current, message)
+                } else {
+                    current.send(Message(kind = "files.rejected", sessionId = current.id, transferId = message.transferId))
+                    sendFeatureState()
+                }
+            }
+            "files.rejected" -> message.transferId?.let { transferId ->
+                pendingFileAccepts.remove(transferId)?.complete(false)
+                outgoingFileJobs.remove(transferId)?.cancel()
+                removeFileTransfer(transferId, "File transfer is turned off on Mac")
+            }
             // Once an offer has been accepted, let that transfer finish even if the
             // setting changes. Disabling Files blocks the next offer instead.
             "files.chunk" -> receiveFileChunk(current, message)
