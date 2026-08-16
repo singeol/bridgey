@@ -492,9 +492,9 @@ final class PairingCoordinator: ObservableObject {
                             kind: "files.offer",
                             sessionId: current.id,
                             messageId: UUID().uuidString.lowercased(),
-                            transferId: transfer.transferID,
                             nonce: encrypted.nonce,
-                            ciphertext: encrypted.ciphertext
+                            ciphertext: encrypted.ciphertext,
+                            transferId: transfer.transferID
                         ))
                         self.fileTransferStatus = "Waiting for Android…"
                     } catch {
