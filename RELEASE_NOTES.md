@@ -1,43 +1,30 @@
-# Bridgey v0.2.0
+# Bridgey v0.2.1
 
-Bridgey v0.2.0 adds persistent, privacy-focused controls for every major
-feature on Android and macOS. Existing paired devices remain trusted when the
-new version is installed over v0.1.2.
+Bridgey v0.2.1 is a reliability and integration release. It keeps the existing
+trusted-device data from v0.2.0 and is intended to be installed on both Android
+and macOS so that feature availability stays synchronized.
 
-## New settings
+## Highlights
 
-- Enable or disable Clipboard, File transfer, Notification forwarding, Battery
-  status, and Find Device globally.
-- Override every feature independently for each trusted device.
-- Change the device name advertised on the local network.
-- Review paired devices and remove their trust records.
-- Choose the directory used for received files on macOS.
-- Start the macOS application automatically at login.
-- Settings persist across application and device restarts.
+- Share text, one file, or several files directly to Bridgey from Android's
+  system Share sheet.
+- Android and macOS now exchange their effective feature settings over the
+  encrypted session. Unavailable controls disappear or become disabled on the
+  other device, including battery status.
+- A disabled remote action is rejected explicitly instead of leaving the Mac
+  stuck on `Sending…` or a file transfer waiting indefinitely.
+- Clipboard and file-transfer UI state is cleared after remote rejection,
+  timeout, cancellation, or disconnect.
 
-## Behavior and reliability
+## Quality and security
 
-- Disabled features are blocked for both outgoing commands and incoming side
-  effects without disconnecting the secure session.
-- Disabled quick actions are clearly shown in the Android and macOS interfaces.
-- The Android foreground notification hides its clipboard action while
-  clipboard sharing is disabled.
-- Disabling Find Device stops an active alert and synchronizes the stopped state
-  with the paired device.
-- File transfers already accepted are allowed to finish when the Files setting
-  changes, preventing stranded partial transfers.
-- macOS now reports the actual selected destination after receiving a file.
-
-## Included functionality
-
-- Encrypted pairing and automatic reconnect over the local network.
-- Clipboard sharing in both directions.
-- Streaming file transfer with progress, speed, ETA, integrity verification,
-  and per-file cancellation.
-- Android notification forwarding and battery status on macOS.
-- Find Device in both directions.
-- Android notification actions and the macOS `Control–Option–C` clipboard
-  shortcut.
+- Added shared Android–macOS protocol tests with deterministic identities and
+  encrypted cross-platform test vectors.
+- Added Android lint and unit tests, macOS tests, CodeQL, dependency review,
+  Dependabot, and status badges.
+- Refreshed GitHub Actions and audited build dependencies.
+- Migrated Android to AGP 9.3.1 with built-in Kotlin and Gradle 9.7.
+- No new runtime permissions are requested by this release.
 
 ## Downloads
 
@@ -60,7 +47,7 @@ Settings → Privacy & Security → Open Anyway**.
 - Android received files remain in `Download/Bridgey`; macOS received files use
   the directory selected in Settings.
 - The macOS build is not notarized.
-- Linux support, notification actions, SMS, media control, and remote input are
-  planned for later versions.
+- Linux support, notification replies, SMS, calls, media control, remote input,
+  and screen sharing are planned for later versions.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).

@@ -29,9 +29,6 @@ updates:
       - dependency-name: com.android.library
         update-types:
           - version-update:semver-major
-      - dependency-name: gradle-wrapper
-        versions:
-          - ">= 9.6"
 
   - package-ecosystem: swift
     directory: /macos
