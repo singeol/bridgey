@@ -2,3 +2,7 @@
 "welcome.body" = "Keep your Mac and phone on the same local network. Choose a device, compare the pairing code, and confirm it on both devices. Optional permissions are requested only when you use the related feature.";
 "welcome.continue" = "Get started";
 "drop.title" = "Drop a file here to send";
+"drop.open" = "Open file drop window";
+"drop.detail" = "This window stays open while you switch to Finder.";
+"drop.ready" = "Drop one file anywhere in this area";
+"drop.unavailable" = "Connect an Android device and enable File transfer first.";

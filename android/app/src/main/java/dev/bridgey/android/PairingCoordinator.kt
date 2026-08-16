@@ -239,7 +239,7 @@ class PairingCoordinator(
             return
         }
         if (!clipboardTextFits(text)) {
-            mutableClipboardStatus.value = "Clipboard content is larger than 32 KB"
+            mutableClipboardStatus.value = "Clipboard exceeds 32 KiB. Send large text or diagnostics as a file."
             onResult(ClipboardSendResult.TOO_LARGE)
             return
         }

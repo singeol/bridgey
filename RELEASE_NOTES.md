@@ -1,19 +1,18 @@
-# Bridgey v0.4.1
+# Bridgey v0.4.2
 
-Bridgey v0.4.1 is a security-hardening patch for v0.4.0. Install it on both
-Android and macOS; functionality and protocol compatibility are unchanged.
+Bridgey v0.4.2 is a usability patch for file drag-and-drop and oversized
+clipboard content. Install it on both Android and macOS; protocol compatibility
+with v0.4.x is unchanged.
 
-## Security fixes
+## Fixes and improvements
 
-- Every Android notification action now uses an explicit destination component
-  as well as an immutable `PendingIntent`, preventing another application from
-  redirecting an action to an unintended Bridgey component.
-- macOS trust records — paired device IDs, names, and pinned public identity
-  keys — are now stored in the login Keychain instead of `UserDefaults`.
-- Existing macOS trust records are migrated to Keychain on first launch and are
-  removed from the old preference store only after the Keychain write succeeds.
-- Regression coverage verifies successful migration and persistence without
-  requiring users to pair their devices again.
+- macOS file drag-and-drop now opens in a dedicated floating window that stays
+  visible while switching to Finder.
+- The drop window clearly reports when no Android device is connected or File
+  transfer is disabled.
+- Android and macOS now explain that clipboard content over 32 KiB cannot be
+  sent as a clipboard message and should be transferred as a file instead.
+- Added English and Russian text for the new macOS file-drop workflow.
 - This release requests no new permissions.
 
 ## Downloads
@@ -34,6 +33,8 @@ Settings → Privacy & Security → Open Anyway**.
 
 - Both devices must be reachable on the same local network.
 - Android requires an explicit user action to read and send its clipboard.
+- Clipboard payloads are limited to 32 KiB; larger text and diagnostics should
+  be sent as files.
 - Rich clipboard support currently preserves text and HTML, not images or files.
 - The macOS build is not notarized.
 

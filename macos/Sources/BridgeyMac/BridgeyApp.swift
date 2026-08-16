@@ -165,7 +165,14 @@ private struct BridgeyPanel: View {
                 }
             }
             if pairing.isFeatureAvailable(.files) {
-                Label(L10n.text("drop.title", fallback: "Drop a file here to send"), systemImage: "square.and.arrow.up")
+                Button { pairing.showFileDropWindow() } label: {
+                    Label(
+                        L10n.text("drop.open", fallback: "Open file drop window"),
+                        systemImage: "rectangle.on.rectangle.angled"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
@@ -178,12 +185,7 @@ private struct BridgeyPanel: View {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(Color.accentColor.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4]))
                     )
-                    .dropDestination(for: URL.self) { urls, _ in
-                        guard let url = urls.first else { return false }
-                        return pairing.sendDroppedFile(url)
-                    }
-                    .accessibilityLabel("File drop area")
-                    .accessibilityHint("Drop a file to send it to the connected Android device")
+                    .accessibilityHint("Opens a window that stays visible while you drag a file from Finder")
             }
             if !pairing.isFeatureAvailable(.clipboard) &&
                 !pairing.isFeatureAvailable(.files) &&

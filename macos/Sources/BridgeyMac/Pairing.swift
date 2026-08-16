@@ -145,6 +145,7 @@ final class PairingCoordinator: ObservableObject {
     private var fileOperationID: UUID?
     private var filePreparationCancellation: FileCancellationToken?
     private var fileTransferWindow: FileTransferWindowController?
+    private var fileDropWindow: FileDropWindowController?
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
     private let diagnostics = BridgeyDiagnostics()
@@ -344,7 +345,7 @@ final class PairingCoordinator: ObservableObject {
             return
         }
         guard clipboardTextFits(text) else {
-            clipboardStatus = "Clipboard content is larger than 32 KB"
+            clipboardStatus = "Clipboard exceeds 32 KiB. Send large text or diagnostics as a file."
             return
         }
         let html = NSPasteboard.general.data(forType: .html)
@@ -645,6 +646,13 @@ final class PairingCoordinator: ObservableObject {
             fileTransferWindow = FileTransferWindowController(pairing: self)
         }
         fileTransferWindow?.show()
+    }
+
+    func showFileDropWindow() {
+        if fileDropWindow == nil {
+            fileDropWindow = FileDropWindowController(pairing: self)
+        }
+        fileDropWindow?.show()
     }
 
     private func beginFileTransferUI() {

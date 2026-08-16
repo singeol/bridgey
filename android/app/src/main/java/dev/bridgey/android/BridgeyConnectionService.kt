@@ -307,7 +307,7 @@ class ClipboardCaptureActivity : Activity() {
                             ClipboardSendResult.NOT_CONNECTED -> "Not connected — clipboard not sent"
                             ClipboardSendResult.CONNECTION_LOST -> "Send failed — connection lost"
                             ClipboardSendResult.NO_ACKNOWLEDGEMENT -> "Mac did not confirm delivery"
-                            ClipboardSendResult.TOO_LARGE -> "Clipboard is larger than 32 KB"
+                            ClipboardSendResult.TOO_LARGE -> "Clipboard exceeds 32 KiB. Send it as a file."
                         }
                         Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
                     }
