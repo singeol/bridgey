@@ -1,24 +1,21 @@
-# Bridgey v0.5.0-alpha.6
+# Bridgey v0.5.0-alpha.7
 
-This sixth Bridgey v0.5 preview makes browser phone-number links open Bridgey
-and fixes inconsistent macOS application naming during installation.
+This seventh Bridgey v0.5 preview fixes mirrored incoming-call controls and
+keeps the call state on macOS synchronized with Android.
 
-## Changes since alpha.5
+## Changes since alpha.6
 
-- macOS Settings now has **Use Bridgey for phone links**. Activating it makes
-  Bridgey the default handler for `tel:` URLs through the supported macOS API.
-- Clicking a phone number in Google, a browser, or another Mac application can
-  now show **Open Bridgey?** before the validated number is sent to Android.
-- Registration is explicit: installing Bridgey alone does not silently replace
-  the user's current phone-link handler.
-- `tel:` input uses the same strict validation as clipboard and Services calls;
-  USSD commands, letters, extensions, malformed escapes, and oversized numbers
-  are rejected.
-- macOS build, DMG, and ZIP contents are now consistently named `Bridgey.app`.
-  This prevents a new `BridgeyMac.app` from sitting beside an older
-  `Bridgey.app` and leaving the old build running.
-- Added regression coverage for ordinary, formatted, encoded, and malicious
-  `tel:` links.
+- Incoming Android calls now expose **Answer** and **Decline** on macOS even
+  when the phone app keeps the required `CallStyle` actions outside the regular
+  notification action list.
+- Accepted calls transition to **Call in progress** with the appropriate
+  **Hang Up** action instead of retaining a stale **Incoming call** label.
+- Ending a call, disabling notification forwarding, disconnecting, or replacing
+  the active call now removes its stale macOS notification and menu-bar card.
+- Outbound call-request messages such as **Android rejected the call request**
+  are cleared when an actual call arrives and otherwise expire automatically.
+- Added Android and macOS regression coverage for required call actions and
+  incoming-to-ongoing state changes.
 
 ## Downloads
 
@@ -29,8 +26,8 @@ and fixes inconsistent macOS application naming during installation.
 
 ## Known limitations
 
-- The browser controls the wording and placement of its external-application
-  confirmation dialog.
+- Call controls depend on the safe `PendingIntent` actions exposed by the
+  Android phone application; Bridgey does not request call-log access.
 - Direct calls require Android telephony hardware and explicit Phone permission.
 - Bridgey does not read contacts, SMS history, or call logs.
 - Both devices must be reachable on the same local network.
