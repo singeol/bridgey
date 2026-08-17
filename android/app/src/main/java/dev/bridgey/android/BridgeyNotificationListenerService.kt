@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
@@ -70,8 +71,8 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
 
         val notificationId = notificationToken(sbn.key)
         forwardedNotifications.record(notificationId, sbn.key, sbn.packageName)
-        val actions = storeActions(notificationId, notification.actions.orEmpty())
         val callType = if (isCall) notificationCallType(notification.extras.getInt("android.callType", 0)) else null
+        val actions = storeActions(notificationId, notificationActionCandidates(notification, callType))
         bridgey.pairing.sendNotification(
             packageName = sbn.packageName,
             applicationName = applicationName,
@@ -115,14 +116,14 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
     @Synchronized
     private fun storeActions(
         notificationId: String,
-        actions: Array<out Notification.Action>,
+        actions: List<NotificationActionCandidate>,
     ): List<ForwardedNotificationAction> {
         removeActions(notificationId)
         val forwarded = actions.take(MAX_FORWARDED_ACTIONS).mapIndexedNotNull { index, action ->
-            val title = action.title?.toString()?.trim().orEmpty().take(64)
-            val pendingIntent = action.actionIntent ?: return@mapIndexedNotNull null
+            val title = action.title.trim().take(64)
+            val pendingIntent = action.pendingIntent
             if (title.isEmpty()) return@mapIndexedNotNull null
-            val remoteInputs = action.remoteInputs.orEmpty().filter(RemoteInput::getAllowFreeFormInput).toTypedArray()
+            val remoteInputs = action.remoteInputs.filter(RemoteInput::getAllowFreeFormInput).toTypedArray()
             val token = notificationActionToken(notificationId, index)
             storedActions[token] = StoredNotificationAction(
                 notificationId = notificationId,
@@ -212,6 +213,58 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         private val ICON_SIZES = listOf(64, 48, 32)
     }
 }
+
+private data class NotificationActionCandidate(
+    val title: String,
+    val pendingIntent: PendingIntent,
+    val remoteInputs: List<RemoteInput> = emptyList(),
+)
+
+private fun notificationActionCandidates(
+    notification: Notification,
+    callType: String?,
+): List<NotificationActionCandidate> {
+    val candidates = notification.actions.orEmpty().mapNotNull { action ->
+        val pendingIntent = action.actionIntent ?: return@mapNotNull null
+        NotificationActionCandidate(
+            title = action.title?.toString().orEmpty(),
+            pendingIntent = pendingIntent,
+            remoteInputs = action.remoteInputs.orEmpty().toList(),
+        )
+    }.toMutableList()
+    if (callType == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return candidates
+
+    callStyleFallbackActions(callType).forEach { action ->
+        val pendingIntent = notification.extras.pendingIntent(action.extraKey) ?: return@forEach
+        if (candidates.none { it.pendingIntent == pendingIntent }) {
+            candidates += NotificationActionCandidate(action.title, pendingIntent)
+        }
+    }
+    return candidates
+}
+
+internal data class CallStyleFallbackAction(val title: String, val extraKey: String)
+
+internal fun callStyleFallbackActions(callType: String): List<CallStyleFallbackAction> = when (callType) {
+    "incoming" -> listOf(
+        CallStyleFallbackAction("Decline", Notification.EXTRA_DECLINE_INTENT),
+        CallStyleFallbackAction("Answer", Notification.EXTRA_ANSWER_INTENT),
+    )
+    "ongoing" -> listOf(CallStyleFallbackAction("Hang Up", Notification.EXTRA_HANG_UP_INTENT))
+    "screening" -> listOf(
+        CallStyleFallbackAction("Hang Up", Notification.EXTRA_HANG_UP_INTENT),
+        CallStyleFallbackAction("Answer", Notification.EXTRA_ANSWER_INTENT),
+    )
+    else -> emptyList()
+}
+
+@Suppress("DEPRECATION")
+private fun Bundle.pendingIntent(key: String): PendingIntent? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelable(key, PendingIntent::class.java)
+    } else {
+        getParcelable(key) as? PendingIntent
+    }
 
 data class ForwardedNotificationAction(
     val token: String,

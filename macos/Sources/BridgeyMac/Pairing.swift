@@ -200,6 +200,7 @@ final class PairingCoordinator: ObservableObject {
     private var callHotKey: GlobalHotKey?
     private var callRequestID: String?
     private var callTimeoutWorkItem: DispatchWorkItem?
+    private var callStatusClearWorkItem: DispatchWorkItem?
     private var clipboardSendID: String?
     private var clipboardTimeoutWorkItem: DispatchWorkItem?
     private let notificationPresenter = NotificationPresenter()
@@ -279,7 +280,7 @@ final class PairingCoordinator: ObservableObject {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
-                    if !self.featureEnabled(.notifications) { self.remoteCall = nil }
+                    if !self.featureEnabled(.notifications) { self.clearRemoteCall() }
                     if !self.featureEnabled(.calls) { self.clearCallStatus() }
                     if value.2 {
                         self.notificationHistory = self.notificationHistoryStore.load()
@@ -358,7 +359,7 @@ final class PairingCoordinator: ObservableObject {
         session?.close()
         session = current
         remoteFeatures = defaultRemoteFeatureState()
-        remoteCall = nil
+        clearRemoteCall()
         scheduleConnectionTimeout(for: current)
         configure(current) { [weak self, weak current] in
             guard let self, let current, current.privateKey != nil else { return }
@@ -405,7 +406,7 @@ final class PairingCoordinator: ObservableObject {
         current?.close()
         stopMacSound()
         androidRinging = false
-        remoteCall = nil
+        clearRemoteCall()
         clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
@@ -421,7 +422,7 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         remoteBattery = nil
-        remoteCall = nil
+        clearRemoteCall()
         clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
@@ -442,25 +443,27 @@ final class PairingCoordinator: ObservableObject {
 
     func sendCallFromClipboard() {
         guard let value = NSPasteboard.general.string(forType: .string) else {
-            callStatus = "Copy a phone number first"
+            setTransientCallStatus("Copy a phone number first")
             return
         }
         sendCall(value)
     }
 
     func sendCall(_ value: String) {
+        callStatusClearWorkItem?.cancel()
+        callStatusClearWorkItem = nil
         guard isFeatureAvailable(.calls) else {
-            callStatus = "Calls are turned off or require Bridgey alpha.5 on both devices"
+            setTransientCallStatus("Calls are turned off or require Bridgey alpha.5 on both devices")
             return
         }
         guard let number = normalizedPhoneNumber(value) else {
-            callStatus = "Clipboard does not contain a valid phone number"
+            setTransientCallStatus("Clipboard does not contain a valid phone number")
             return
         }
         guard let current = session, case .connected = state,
               let plaintext = try? JSONEncoder().encode(CallRequestPayload(number: number)),
               let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else {
-            callStatus = "Android is not connected"
+            setTransientCallStatus("Android is not connected")
             return
         }
         let messageID = UUID().uuidString.lowercased()
@@ -477,7 +480,7 @@ final class PairingCoordinator: ObservableObject {
         let timeout = DispatchWorkItem { [weak self] in
             guard self?.callRequestID == messageID else { return }
             self?.callRequestID = nil
-            self?.callStatus = "Android did not confirm the call request"
+            self?.setTransientCallStatus("Android did not confirm the call request")
         }
         callTimeoutWorkItem = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
@@ -486,8 +489,21 @@ final class PairingCoordinator: ObservableObject {
     private func clearCallStatus() {
         callTimeoutWorkItem?.cancel()
         callTimeoutWorkItem = nil
+        callStatusClearWorkItem?.cancel()
+        callStatusClearWorkItem = nil
         callRequestID = nil
         callStatus = nil
+    }
+
+    private func setTransientCallStatus(_ status: String) {
+        callStatusClearWorkItem?.cancel()
+        callStatus = status
+        let work = DispatchWorkItem { [weak self] in
+            self?.callStatus = nil
+            self?.callStatusClearWorkItem = nil
+        }
+        callStatusClearWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
     }
 
     private func featureEnabled(_ feature: BridgeyFeature, current: Session? = nil) -> Bool {
@@ -853,7 +869,7 @@ final class PairingCoordinator: ObservableObject {
         current.initiatedLocally = false
         session = current
         remoteFeatures = defaultRemoteFeatureState()
-        remoteCall = nil
+        clearRemoteCall()
         configure(current, onReady: {})
     }
 
@@ -877,7 +893,7 @@ final class PairingCoordinator: ObservableObject {
             if case .connected = self.state {
                 self.session = nil
                 self.remoteBattery = nil
-                self.remoteCall = nil
+                self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.state = .idle
                 NSLog("TRANSPORT disconnected")
@@ -902,7 +918,7 @@ final class PairingCoordinator: ObservableObject {
                     self.connectionTimeoutWorkItem?.cancel()
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
-                    self.remoteCall = nil
+                    self.clearRemoteCall()
                     current.close()
                     self.state = .failed("Local Network access is off. Enable Bridgey in System Settings → Privacy & Security → Local Network.")
                     self.diagnostics.record(category: "transport", event: "local_network_denied", outcome: "permission_required")
@@ -997,7 +1013,7 @@ final class PairingCoordinator: ObservableObject {
                 })
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
-                if remoteFeatures[.notifications] == false { remoteCall = nil }
+                if remoteFeatures[.notifications] == false { clearRemoteCall() }
                 if remoteFeatures[.calls] == false { clearCallStatus() }
                 if remoteFeatures[.files] == false && fileTransferActive {
                     cancelFileTransfer()
@@ -1110,9 +1126,9 @@ final class PairingCoordinator: ObservableObject {
                 callTimeoutWorkItem = nil
                 callRequestID = nil
                 switch message.kind {
-                case "calls.started": callStatus = "Call started on Android"
-                case "calls.confirmation_required": callStatus = "Confirm the call from the Android notification"
-                default: callStatus = "Android rejected the call request"
+                case "calls.started": setTransientCallStatus("Call started on Android")
+                case "calls.confirmation_required": setTransientCallStatus("Confirm the call from the Android notification")
+                default: setTransientCallStatus("Android rejected the call request")
                 }
             case "files.offer":
                 guard featureEnabled(.files, current: current) else {
@@ -1475,7 +1491,7 @@ final class PairingCoordinator: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = payload.callType == nil ? payload.applicationName : remoteCallStatusTitle(payload.callType)
         content.subtitle = payload.title
-        content.body = payload.text
+        content.body = payload.callType == nil ? payload.text : remoteCallDetail(payload.text, type: payload.callType)
         content.sound = .default
         content.categoryIdentifier = notificationCategoryIdentifier(for: payload, deviceID: deviceID)
         if let attachment = notificationIconAttachment(for: payload) {
@@ -1512,6 +1528,11 @@ final class PairingCoordinator: ObservableObject {
 
     private func updateRemoteCall(_ payload: RemoteNotificationPayload, deviceID: String) {
         guard let callType = normalizedRemoteCallType(payload.callType) else { return }
+        if let existing = remoteCall,
+           existing.notificationID != payload.notificationId || existing.deviceID != deviceID {
+            clearRemoteCall()
+        }
+        clearCallStatus()
         let actions = (payload.actions ?? []).filter { !$0.allowsReply }.prefix(4).map {
             RemoteCallAction(id: $0.actionToken, title: $0.title)
         }
@@ -1520,7 +1541,7 @@ final class PairingCoordinator: ObservableObject {
             deviceID: deviceID,
             applicationName: payload.applicationName,
             caller: payload.title,
-            detail: payload.text,
+            detail: remoteCallDetail(payload.text, type: callType),
             type: callType,
             actions: actions
         )
@@ -1678,6 +1699,18 @@ final class PairingCoordinator: ObservableObject {
         center.removeDeliveredNotifications(withIdentifiers: [identifier])
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
         diagnostics.record(category: "notification", event: "removed_remotely")
+    }
+
+    private func clearRemoteCall() {
+        guard let call = remoteCall else { return }
+        remoteCall = nil
+        let identifier = remoteNotificationRequestIdentifier(
+            deviceID: call.deviceID,
+            notificationID: call.notificationID
+        )
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
     }
 
     private func saveTrust(_ current: Session) {

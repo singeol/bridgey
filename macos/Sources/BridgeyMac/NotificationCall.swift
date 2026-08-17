@@ -15,3 +15,11 @@ func remoteCallStatusTitle(_ type: String?) -> String {
     default: return "Phone call"
     }
 }
+
+func remoteCallDetail(_ detail: String, type: String?) -> String {
+    let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+    let genericCallDescriptions: Set<String> = [
+        "incoming call", "ongoing call", "call in progress", "call screening", "screening call", "phone call",
+    ]
+    return genericCallDescriptions.contains(trimmed.lowercased()) ? "" : trimmed
+}

@@ -57,4 +57,11 @@ class ForwardedNotificationRegistryTest {
         assertTrue(notificationCallType(2) == "ongoing")
         assertTrue(notificationCallType(99) == "unknown")
     }
+
+    @Test fun exposesRequiredCallStyleActionsWhenPhoneAppDoesNotPublishRegularActions() {
+        assertTrue(callStyleFallbackActions("incoming").map { it.title } == listOf("Decline", "Answer"))
+        assertTrue(callStyleFallbackActions("ongoing").map { it.title } == listOf("Hang Up"))
+        assertTrue(callStyleFallbackActions("screening").map { it.title } == listOf("Hang Up", "Answer"))
+        assertTrue(callStyleFallbackActions("unknown").isEmpty())
+    }
 }
