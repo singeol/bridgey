@@ -11,6 +11,7 @@ enum class BridgeyFeature(val key: String, val title: String) {
     NOTIFICATIONS("notifications", "Notification forwarding"),
     BATTERY("battery", "Battery status"),
     FIND_DEVICE("find_device", "Find Device"),
+    CALLS("calls", "Calls from Mac"),
 }
 
 data class BridgeySettingsState(
@@ -19,6 +20,7 @@ data class BridgeySettingsState(
     val deviceFeatures: Map<String, Map<BridgeyFeature, Boolean>>,
     val notificationApplications: Map<String, String>,
     val disabledNotificationPackages: Set<String>,
+    val directCallsEnabled: Boolean,
 )
 
 internal fun effectiveFeatureEnabled(
@@ -90,6 +92,11 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
     fun isNotificationApplicationEnabled(packageName: String): Boolean =
         packageName !in mutableState.value.disabledNotificationPackages
 
+    fun setDirectCallsEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_DIRECT_CALLS_ENABLED, enabled).apply()
+        mutableState.value = mutableState.value.copy(directCallsEnabled = enabled)
+    }
+
     fun removeDevice(deviceId: String) {
         val editor = preferences.edit()
         BridgeyFeature.entries.forEach { editor.remove("device.$deviceId.${it.key}") }
@@ -120,6 +127,7 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
             deviceFeatures = perDevice,
             notificationApplications = notificationApplications,
             disabledNotificationPackages = preferences.getStringSet(KEY_DISABLED_NOTIFICATION_PACKAGES, emptySet()).orEmpty(),
+            directCallsEnabled = preferences.getBoolean(KEY_DIRECT_CALLS_ENABLED, false),
         )
     }
 
@@ -127,5 +135,6 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_NOTIFICATION_APPLICATION_PREFIX = "notification.application."
         private const val KEY_DISABLED_NOTIFICATION_PACKAGES = "notification.disabled_packages"
+        private const val KEY_DIRECT_CALLS_ENABLED = "calls.direct_enabled"
     }
 }

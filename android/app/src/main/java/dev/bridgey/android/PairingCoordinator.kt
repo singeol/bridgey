@@ -133,6 +133,8 @@ class PairingCoordinator(
     private var acceptJob: Job? = null
     private var findRingtone: Ringtone? = null
     private val diagnostics = BridgeyDiagnostics()
+    private val remoteCallRequest = RemoteCallRequest(appContext)
+    private var lastRemoteCallRequestAt = 0L
 
     init {
         scope.launch {
@@ -871,6 +873,7 @@ class PairingCoordinator(
             }
             "notifications.dismiss" -> receiveNotificationDismiss(current, message)
             "notifications.action" -> receiveNotificationAction(current, message)
+            "calls.request" -> receiveCallRequest(current, message)
             "find.start" -> receiveFindCommand(current, message, start = true)
             "find.stop" -> receiveFindCommand(current, message, start = false)
             "find.started" -> receiveFindAcknowledgement(current, message, started = true)
@@ -918,6 +921,39 @@ class PairingCoordinator(
             ?: return fail("Invalid notification command")
         BridgeyNotificationListenerService.dismiss(notificationId)
         diagnostics.record("notification", "dismiss_requested")
+    }
+
+    private fun receiveCallRequest(current: Session, message: Message) {
+        val messageId = message.messageId ?: return
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id || !current.acceptMessageId(messageId)) return
+        if (!settings.isEnabled(BridgeyFeature.CALLS, current.remoteDeviceId)) {
+            current.send(Message(kind = "calls.rejected", sessionId = current.id, messageId = messageId))
+            sendFeatureState()
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (lastRemoteCallRequestAt != 0L && now - lastRemoteCallRequestAt < 3_000) {
+            current.send(Message(kind = "calls.rejected", sessionId = current.id, messageId = messageId))
+            return
+        }
+        val nonce = message.nonce ?: return fail("Invalid encrypted call request")
+        val ciphertext = message.ciphertext ?: return fail("Invalid encrypted call request")
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            nonce,
+            ciphertext,
+        ) ?: return fail("Invalid encrypted call request")
+        val number = runCatching {
+            JSONObject(plaintext.toString(Charsets.UTF_8)).getString("number")
+        }.getOrNull()?.let(::normalizedPhoneNumber)
+        if (number == null) {
+            current.send(Message(kind = "calls.rejected", sessionId = current.id, messageId = messageId))
+            return
+        }
+        lastRemoteCallRequestAt = now
+        val result = remoteCallRequest.execute(number, settings.state.value.directCallsEnabled)
+        current.send(Message(kind = result.wireKind, sessionId = current.id, messageId = messageId))
+        diagnostics.record("calls", "request", outcome = result.name.lowercase())
     }
 
     private fun receiveNotificationAction(current: Session, message: Message) {
@@ -1225,7 +1261,11 @@ class PairingCoordinator(
         val values = payload.optJSONObject("features") ?: return fail("Invalid feature state")
         if (payload.optInt("version") != 1) return
         val received = BridgeyFeature.entries.associateWith { feature ->
-            if (!values.has(feature.key) || values.opt(feature.key) !is Boolean) return fail("Invalid feature state")
+            if (!values.has(feature.key)) {
+                if (feature == BridgeyFeature.CALLS) return@associateWith false
+                return fail("Invalid feature state")
+            }
+            if (values.opt(feature.key) !is Boolean) return fail("Invalid feature state")
             values.getBoolean(feature.key)
         }
         mutableRemoteFeatures.value = received
@@ -1266,7 +1306,7 @@ class PairingCoordinator(
     }
 
     private companion object {
-        fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith { true }
+        fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith { it != BridgeyFeature.CALLS }
         const val FILE_CHUNK_SIZE = 24 * 1024
         const val MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024
         const val MAX_NOTIFICATION_ICON_BASE64_LENGTH = 28 * 1024

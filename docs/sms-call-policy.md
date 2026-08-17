@@ -17,6 +17,10 @@ Bridgey v0.5 does not declare `READ_SMS`, `SEND_SMS`, `READ_CALL_LOG`,
   phone application. Availability and labels therefore vary by phone/OEM.
 - Bridgey does not read the SMS database or call log and does not make itself
   the default SMS or Phone application.
+- A Mac may send a validated phone number to Android. The default path uses
+  `ACTION_DIAL` and requires confirmation on the phone. Users may separately
+  opt in to direct calling, which is the only path that requests `CALL_PHONE`.
+  Bridgey blocks direct handling of platform-recognized emergency numbers.
 
 This keeps the feature useful without adding broad access to unrelated message
 history or telephony metadata.

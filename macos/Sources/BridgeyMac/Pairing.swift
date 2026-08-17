@@ -116,13 +116,17 @@ private struct FindDevicePayload: Codable {
     let alertId: String
 }
 
+private struct CallRequestPayload: Codable {
+    let number: String
+}
+
 private struct FeatureStatePayload: Codable {
     let version: Int
     let features: [String: Bool]
 }
 
 private func defaultRemoteFeatureState() -> [BridgeyFeature: Bool] {
-    Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0, true) })
+    Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0, $0 != .calls) })
 }
 
 private final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
@@ -170,6 +174,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var remoteFeatures = defaultRemoteFeatureState()
     @Published private(set) var notificationHistory: [NotificationHistoryItem] = []
     @Published private(set) var remoteCall: RemoteCallStatus?
+    @Published private(set) var callStatus: String?
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -192,6 +197,9 @@ final class PairingCoordinator: ObservableObject {
     private var lastTrustedEndpoint: (host: String, port: Int, name: String)?
     private var reconnectAttempt = 0
     private var clipboardHotKey: GlobalHotKey?
+    private var callHotKey: GlobalHotKey?
+    private var callRequestID: String?
+    private var callTimeoutWorkItem: DispatchWorkItem?
     private var clipboardSendID: String?
     private var clipboardTimeoutWorkItem: DispatchWorkItem?
     private let notificationPresenter = NotificationPresenter()
@@ -253,6 +261,13 @@ final class PairingCoordinator: ObservableObject {
         ) { [weak self] in
             self?.sendClipboard()
         }
+        callHotKey = GlobalHotKey(
+            keyCode: UInt32(kVK_ANSI_P),
+            modifiers: UInt32(controlKey | optionKey),
+            identifier: 2
+        ) { [weak self] in
+            self?.sendCallFromClipboard()
+        }
         settingsCancellable = Publishers.CombineLatest3(
             settings.$globalFeatures,
             settings.$deviceFeatures,
@@ -265,6 +280,7 @@ final class PairingCoordinator: ObservableObject {
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     if !self.featureEnabled(.notifications) { self.remoteCall = nil }
+                    if !self.featureEnabled(.calls) { self.clearCallStatus() }
                     if value.2 {
                         self.notificationHistory = self.notificationHistoryStore.load()
                     } else {
@@ -390,6 +406,7 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         remoteCall = nil
+        clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
@@ -405,6 +422,7 @@ final class PairingCoordinator: ObservableObject {
         androidRinging = false
         remoteBattery = nil
         remoteCall = nil
+        clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
@@ -420,6 +438,56 @@ final class PairingCoordinator: ObservableObject {
 
     func updateDeviceName(_ value: String) {
         deviceName = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+    }
+
+    func sendCallFromClipboard() {
+        guard let value = NSPasteboard.general.string(forType: .string) else {
+            callStatus = "Copy a phone number first"
+            return
+        }
+        sendCall(value)
+    }
+
+    func sendCall(_ value: String) {
+        guard isFeatureAvailable(.calls) else {
+            callStatus = "Calls are turned off or require Bridgey alpha.5 on both devices"
+            return
+        }
+        guard let number = normalizedPhoneNumber(value) else {
+            callStatus = "Clipboard does not contain a valid phone number"
+            return
+        }
+        guard let current = session, case .connected = state,
+              let plaintext = try? JSONEncoder().encode(CallRequestPayload(number: number)),
+              let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else {
+            callStatus = "Android is not connected"
+            return
+        }
+        let messageID = UUID().uuidString.lowercased()
+        callRequestID = messageID
+        callStatus = "Sending call request…"
+        current.send(PairingMessage(
+            kind: "calls.request",
+            sessionId: current.id,
+            messageId: messageID,
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
+        callTimeoutWorkItem?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard self?.callRequestID == messageID else { return }
+            self?.callRequestID = nil
+            self?.callStatus = "Android did not confirm the call request"
+        }
+        callTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
+    }
+
+    private func clearCallStatus() {
+        callTimeoutWorkItem?.cancel()
+        callTimeoutWorkItem = nil
+        callRequestID = nil
+        callStatus = nil
     }
 
     private func featureEnabled(_ feature: BridgeyFeature, current: Session? = nil) -> Bool {
@@ -800,6 +868,7 @@ final class PairingCoordinator: ObservableObject {
             self.heartbeatWorkItem?.cancel()
             self.cancelIncomingFiles()
             self.clearClipboardSendStatus()
+            self.clearCallStatus()
             if !self.outgoingFiles.isEmpty {
                 self.outgoingFiles.values.forEach { $0.cancel() }
                 self.outgoingFiles.removeAll()
@@ -920,15 +989,16 @@ final class PairingCoordinator: ObservableObject {
                       let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
                       let payload = try? JSONDecoder().decode(FeatureStatePayload.self, from: plaintext),
                       payload.version == 1,
-                      BridgeyFeature.allCases.allSatisfy({ payload.features[$0.rawValue] != nil }) else {
+                      BridgeyFeature.allCases.filter({ $0 != .calls }).allSatisfy({ payload.features[$0.rawValue] != nil }) else {
                     throw PairingError.invalidMessage
                 }
                 remoteFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
-                    ($0, payload.features[$0.rawValue]!)
+                    ($0, payload.features[$0.rawValue] ?? false)
                 })
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
                 if remoteFeatures[.notifications] == false { remoteCall = nil }
+                if remoteFeatures[.calls] == false { clearCallStatus() }
                 if remoteFeatures[.files] == false && fileTransferActive {
                     cancelFileTransfer()
                     fileTransferStatus = nil
@@ -1034,6 +1104,16 @@ final class PairingCoordinator: ObservableObject {
                 guard featureEnabled(.notifications, current: current),
                       let reference = try receiveNotificationReference(message, in: current) else { return }
                 removeRemoteNotification(reference.notificationId, deviceID: current.remoteDeviceID)
+            case "calls.started", "calls.confirmation_required", "calls.rejected":
+                guard message.messageId == callRequestID else { return }
+                callTimeoutWorkItem?.cancel()
+                callTimeoutWorkItem = nil
+                callRequestID = nil
+                switch message.kind {
+                case "calls.started": callStatus = "Call started on Android"
+                case "calls.confirmation_required": callStatus = "Confirm the call from the Android notification"
+                default: callStatus = "Android rejected the call request"
+                }
             case "files.offer":
                 guard featureEnabled(.files, current: current) else {
                     current.send(PairingMessage(

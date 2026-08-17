@@ -8,6 +8,7 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
     case notifications
     case battery
     case findDevice = "find_device"
+    case calls
 
     var id: String { rawValue }
     var title: String {
@@ -17,6 +18,7 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
         case .notifications: "Android notifications"
         case .battery: "Battery status"
         case .findDevice: "Find Device"
+        case .calls: "Calls from Mac"
         }
     }
 }

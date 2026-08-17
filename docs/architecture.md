@@ -19,7 +19,8 @@ Transport interface ----- WebSocket/TLS implementation
 Plugin registry
   |-- clipboard
   |-- files
-  `-- notifications
+  |-- notifications
+  `-- calls
 ```
 
 ## Core boundaries
@@ -110,6 +111,11 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   the sole exception to the ongoing-notification filter: their bounded call
   type and existing action tokens drive a temporary macOS call card. Bridgey
   never invents a reject, answer, or mute operation.
+- **Calls from Mac:** macOS sends only a strictly validated number over the
+  authenticated encrypted session. Android defaults to a notification that
+  opens the system dialer for user confirmation. Immediate calling is a
+  separate opt-in backed by the runtime Phone permission; emergency numbers
+  never use the immediate path.
 
 ## Platform lifecycle
 

@@ -70,3 +70,8 @@ are off until their OS permission and per-peer capability are granted. Bridgey
 does not weaken platform background/privacy controls to obtain clipboard or
 notification data.
 
+Remote call requests are accepted only from an authenticated paired session,
+are encrypted and replay-protected, and are subject to per-peer feature policy,
+strict phone-number validation, and rate limiting. Android requires local
+confirmation by default. The higher-risk direct-call path is a separate local
+opt-in and never handles a platform-recognized emergency number directly.

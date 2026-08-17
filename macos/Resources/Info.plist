@@ -29,12 +29,25 @@
     <key>CFBundleShortVersionString</key>
     <string>0.5.0</string>
     <key>CFBundleVersion</key>
-    <string>14</string>
+    <string>15</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>Call with Bridgey</string></dict>
+            <key>NSMessage</key>
+            <string>callWithBridgey</string>
+            <key>NSPortName</key>
+            <string>BridgeyMac</string>
+            <key>NSSendTypes</key>
+            <array><string>public.utf8-plain-text</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>

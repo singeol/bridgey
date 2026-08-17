@@ -10,10 +10,11 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.5.0-alpha.4 development. Android and macOS clients support
+> Project status: v0.5.0-alpha.5 development. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
-> Android notification forwarding, battery status, and Find Device over the
-> local network. Discovery data is intentionally treated as untrusted.
+> Android notification forwarding, battery status, Find Device, and starting a
+> phone call from macOS over the local network. Discovery data is intentionally
+> treated as untrusted.
 
 ## MVP scope
 
@@ -24,6 +25,7 @@ client can later implement the same public protocol without Android changes.
 - Android notification forwarding to native macOS notifications
 - Android battery status on macOS
 - Find Device in both directions
+- Start a phone call from selected text or the macOS clipboard
 
 The current release deliberately starts with a small local-first feature set.
 Communication, remote-control, screen-sharing, and optional relay features are
@@ -64,6 +66,7 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Add per-application notification filters and a private local history
 - [x] Research SMS viewing/replies and document the permission-safe notification-action scope
 - [x] Show call state and expose only the actions supplied by the Android phone application
+- [x] Start a validated phone call from selected macOS text or the clipboard
 
 ### v0.6 — remote interaction
 
@@ -163,6 +166,9 @@ Bridgey asks for access only when the related feature needs it:
   received files, and Find Device controls remain visible.
 - Android notification access is optional and is used only to forward a
   notification's application name, title, and text to the paired Mac.
+- Android Phone access is optional and is requested only if the user enables
+  calls without confirmation. Without it, a request from Mac opens the system
+  dialer through an Android notification and still requires phone confirmation.
 - macOS local-network access is required for Bonjour discovery and direct
   encrypted connections to Android devices.
 - macOS notifications are optional and are requested only when the user enables
@@ -170,9 +176,9 @@ Bridgey asks for access only when the related feature needs it:
 - File access is scoped to a file selected by the user and the Bridgey receive
   directory (`Downloads/Bridgey`).
 
-Bridgey does not request location, contacts, camera, microphone, screen
-recording, Accessibility, Input Monitoring, or Full Disk Access. Permission
-denial disables only the corresponding optional integration.
+Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
+screen recording, Accessibility, Input Monitoring, or Full Disk Access.
+Permission denial disables only the corresponding optional integration.
 
 ## Settings
 
@@ -180,10 +186,18 @@ Open **Settings** on Android or the gear menu on macOS to:
 
 - change the name advertised to nearby Bridgey devices;
 - enable Clipboard, File transfer, Notification forwarding, Battery status,
-  and Find Device globally;
+  Find Device, and Calls from Mac globally;
 - override those features for each trusted device or forget its trust record;
 - choose the macOS folder used for received files;
 - start the macOS app automatically at login.
+
+To call from macOS, copy a phone number and press **Call** in Bridgey or
+`Control-Option-P`. In applications that expose macOS Services, select a phone
+number and choose **Services → Call with Bridgey**. Android uses confirmation
+mode by default: tap the call-request notification to review the number in the
+system dialer. An explicit Android Settings switch enables direct calls and
+requests the `CALL_PHONE` permission; emergency numbers are never dialled
+directly by Bridgey.
 
 Connected devices exchange their effective feature state over the encrypted
 session. A feature is available only when both devices enable it, so controls

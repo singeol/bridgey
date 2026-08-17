@@ -7,6 +7,7 @@ struct BridgeyApp: App {
     @StateObject private var pairing: PairingCoordinator
     @StateObject private var settings: BridgeySettings
     private let settingsWindow: SettingsWindowController
+    private let callServiceProvider: CallServiceProvider
 
     init() {
         LegacyPreferences.migrateIfNeeded()
@@ -17,6 +18,9 @@ struct BridgeyApp: App {
         let pairing = PairingCoordinator(deviceID: discovery.localDeviceID, deviceName: discovery.localDeviceName, settings: settings)
         pairing.observe(discovery)
         _pairing = StateObject(wrappedValue: pairing)
+        let callServiceProvider = CallServiceProvider { [weak pairing] number in pairing?.sendCall(number) }
+        self.callServiceProvider = callServiceProvider
+        NSApplication.shared.servicesProvider = callServiceProvider
         settingsWindow = SettingsWindowController(discovery: discovery, pairing: pairing, settings: settings)
     }
 
@@ -175,7 +179,7 @@ private struct BridgeyPanel: View {
                 .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
-            HStack(spacing: 8) {
+            LazyVGrid(columns: quickActionColumns, spacing: 8) {
                 if pairing.isFeatureAvailable(.clipboard) {
                     actionButton("Clipboard", icon: "doc.on.clipboard") { pairing.sendClipboard() }
                 }
@@ -190,6 +194,10 @@ private struct BridgeyPanel: View {
                         if pairing.macRinging || pairing.androidRinging { pairing.stopFinding() }
                         else { pairing.findAndroid() }
                     }
+                }
+                if pairing.isFeatureAvailable(.calls) {
+                    actionButton("Call", icon: "phone.arrow.up.right") { pairing.sendCallFromClipboard() }
+                        .help("Call the phone number currently in the clipboard (⌃⌥P)")
                 }
             }
             if pairing.isFeatureAvailable(.files) {
@@ -217,13 +225,19 @@ private struct BridgeyPanel: View {
             }
             if !pairing.isFeatureAvailable(.clipboard) &&
                 !pairing.isFeatureAvailable(.files) &&
-                !pairing.isFeatureAvailable(.findDevice) {
+                !pairing.isFeatureAvailable(.findDevice) &&
+                !pairing.isFeatureAvailable(.calls) {
                 Text("Quick actions are turned off in Settings on one of your devices.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
             if let status = pairing.clipboardStatus {
                 Label(status, systemImage: status == "Delivered" ? "checkmark.circle.fill" : "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let status = pairing.callStatus {
+                Label(status, systemImage: status == "Call started on Android" ? "phone.fill" : "phone.badge.clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -366,6 +380,10 @@ private struct BridgeyPanel: View {
         case 1...25: "battery.25percent"
         default: "battery.0percent"
         }
+    }
+
+    private var quickActionColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 8), GridItem(.flexible())]
     }
 }
 

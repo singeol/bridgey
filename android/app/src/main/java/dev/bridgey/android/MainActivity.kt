@@ -87,6 +87,7 @@ private val BridgeyDarkScheme = darkColorScheme(
 private enum class PermissionPrompt {
     BridgeyNotifications,
     NotificationForwarding,
+    DirectCalls,
 }
 
 private data class SharedContent(
@@ -97,12 +98,16 @@ private data class SharedContent(
 class MainActivity : ComponentActivity() {
     private lateinit var discovery: NsdDiscoveryService
     private lateinit var pairing: PairingCoordinator
+    private lateinit var bridgeySettings: BridgeySettings
     private var notificationAccessEnabled by mutableStateOf(false)
     private var appNotificationsEnabled by mutableStateOf(false)
     private var sharedContent by mutableStateOf<SharedContent?>(null)
     private var showOnboarding by mutableStateOf(false)
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshPermissionState()
+    }
+    private val callPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        bridgeySettings.setDirectCallsEnabled(granted)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,6 +122,7 @@ class MainActivity : ComponentActivity() {
             .getBoolean("completed", false)
         pairing = bridgey.pairing
         discovery = bridgey.discovery
+        bridgeySettings = bridgey.settings
         sharedContent = intent.toSharedContent()
         startForegroundService(Intent(this, BridgeyConnectionService::class.java))
         setContent {
@@ -137,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     onOpenNotificationAccessSettings = {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
+                    onRequestDirectCalls = ::requestDirectCalls,
                     onExportDiagnostics = ::exportDiagnostics,
                     sharedContent = sharedContent,
                     onSharedContentHandled = ::clearSharedContent,
@@ -192,6 +199,12 @@ class MainActivity : ComponentActivity() {
     private fun refreshPermissionState() {
         appNotificationsEnabled = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         notificationAccessEnabled = NotificationAccess.isEnabled(this)
+        if (
+            ::bridgeySettings.isInitialized && bridgeySettings.state.value.directCallsEnabled &&
+            checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            bridgeySettings.setDirectCallsEnabled(false)
+        }
     }
 
     private fun clearSharedContent() {
@@ -205,6 +218,14 @@ class MainActivity : ComponentActivity() {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             openAppNotificationSettings()
+        }
+    }
+
+    private fun requestDirectCalls() {
+        if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            bridgeySettings.setDirectCallsEnabled(true)
+        } else {
+            callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
         }
     }
 
@@ -275,6 +296,7 @@ private fun BridgeyApp(
     onRequestAppNotifications: () -> Unit,
     onOpenAppNotificationSettings: () -> Unit,
     onOpenNotificationAccessSettings: () -> Unit,
+    onRequestDirectCalls: () -> Unit,
     onExportDiagnostics: () -> Unit,
     sharedContent: SharedContent?,
     onSharedContentHandled: () -> Unit,
@@ -323,6 +345,7 @@ private fun BridgeyApp(
                 onGlobalFeatureChanged = { feature, enabled ->
                     settings.setGlobal(feature, enabled)
                     if (feature == BridgeyFeature.FIND_DEVICE && !enabled) pairing.stopFinding()
+                    if (feature == BridgeyFeature.CALLS && !enabled) settings.setDirectCallsEnabled(false)
                 },
                 onDeviceFeatureChanged = { deviceId, feature, enabled ->
                     settings.setForDevice(deviceId, feature, enabled)
@@ -334,6 +357,10 @@ private fun BridgeyApp(
                 onNotificationApplicationChanged = { packageName, enabled ->
                     settings.setNotificationApplicationEnabled(packageName, enabled)
                     BridgeyNotificationListenerService.filterChanged(packageName, enabled)
+                },
+                onDirectCallsChanged = { enabled ->
+                    if (enabled) permissionPrompt = PermissionPrompt.DirectCalls
+                    else settings.setDirectCallsEnabled(false)
                 },
                 onForget = pairing::forget,
                 onExportDiagnostics = onExportDiagnostics,
@@ -406,22 +433,35 @@ private fun BridgeyApp(
 
     permissionPrompt?.let { prompt ->
         val isForwarding = prompt == PermissionPrompt.NotificationForwarding
+        val isDirectCalls = prompt == PermissionPrompt.DirectCalls
         AlertDialog(
             onDismissRequest = { permissionPrompt = null },
-            title = { Text(if (isForwarding) "Forward Android notifications?" else "Allow Bridgey notifications?") },
+            title = {
+                Text(
+                    when {
+                        isForwarding -> "Forward Android notifications?"
+                        isDirectCalls -> "Allow direct calls from Mac?"
+                        else -> "Allow Bridgey notifications?"
+                    },
+                )
+            },
             text = {
                 Text(
-                    if (isForwarding) {
-                        "This optional access lets Bridgey read notification titles and text and send them only to your paired Mac over the encrypted local connection."
-                    } else {
-                        "Bridgey uses notifications to keep the connection visible and show file transfers, received files, and Find Device. It does not use notifications for advertising."
+                    when {
+                        isForwarding -> "This optional access lets Bridgey read notification titles and text and send them only to your paired Mac over the encrypted local connection."
+                        isDirectCalls -> "This optional Phone permission lets an authenticated paired Mac start a call immediately. Leave it off to receive a notification that opens the Android dialer for confirmation."
+                        else -> "Bridgey uses notifications to keep the connection visible and show file transfers, received files, and Find Device. It does not use notifications for advertising."
                     },
                 )
             },
             confirmButton = {
                 Button(onClick = {
                     permissionPrompt = null
-                    if (isForwarding) onOpenNotificationAccessSettings() else onRequestAppNotifications()
+                    when {
+                        isForwarding -> onOpenNotificationAccessSettings()
+                        isDirectCalls -> onRequestDirectCalls()
+                        else -> onRequestAppNotifications()
+                    }
                 }) { Text("Continue") }
             },
             dismissButton = { TextButton(onClick = { permissionPrompt = null }) { Text("Not now") } },
@@ -483,6 +523,7 @@ private fun SettingsScreen(
     onGlobalFeatureChanged: (BridgeyFeature, Boolean) -> Unit,
     onDeviceFeatureChanged: (String, BridgeyFeature, Boolean) -> Unit,
     onNotificationApplicationChanged: (String, Boolean) -> Unit,
+    onDirectCallsChanged: (Boolean) -> Unit,
     onForget: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
@@ -526,6 +567,30 @@ private fun SettingsScreen(
                 enabled = state.globalFeatures[feature] != false,
                 onChanged = { onGlobalFeatureChanged(feature, it) },
             )
+        }
+
+        if (state.globalFeatures[BridgeyFeature.CALLS] != false) {
+            item {
+                Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("Start calls without confirmation", fontWeight = FontWeight.Medium)
+                            Text(
+                                "Optional. When off, Mac call requests open the Android dialer from a notification.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.directCallsEnabled,
+                            onCheckedChange = onDirectCallsChanged,
+                        )
+                    }
+                }
+            }
         }
 
         if (state.globalFeatures[BridgeyFeature.NOTIFICATIONS] != false) {

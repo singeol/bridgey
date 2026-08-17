@@ -76,9 +76,11 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, and `find_device`. A UI action is available only
-when both peers report the corresponding feature as enabled. Clients predating
-this message are treated as enabling all known v1 features for compatibility.
+`notifications`, `battery`, `find_device`, and `calls`. A UI action is available
+only when both peers report the corresponding feature as enabled. Clients
+predating this message are treated as enabling the original v1 features for
+compatibility; the later `calls` feature is disabled unless a peer advertises
+it explicitly.
 
 ## Pairing flow
 
@@ -228,6 +230,24 @@ Android presents a separate ongoing find-device notification with a Stop
 action while its alert is active. Stopping from that action, from either app,
 or disconnecting stops the local alert; find-device state is never persisted
 across sessions.
+
+### Calls from Mac (`calls.v1`)
+
+macOS sends `calls.request` only when both peers advertise the `calls` feature.
+Its AES-GCM encrypted JSON payload contains a single `number` string. The
+receiver accepts only 3–15 decimal digits with an optional leading `+`; spaces,
+parentheses, dots, and hyphens may be present for display formatting and are
+removed before use. Letters, extensions, USSD strings, and other dial commands
+are rejected. Each request has a unique replay-protected message ID and Android
+accepts at most one request every three seconds.
+
+Android answers with the same message ID using `calls.started`,
+`calls.confirmation_required`, or `calls.rejected`. Confirmation mode is the
+default and posts a local notification whose explicit action opens the system
+dialer with `ACTION_DIAL`. Direct mode is a separate local opt-in that requires
+`CALL_PHONE`; it uses the platform telecom service and never starts a number the
+platform identifies as an emergency number. Local feature policy is checked
+again immediately before either side effect. Number content is not logged.
 
 ## Compatibility
 
