@@ -4,7 +4,7 @@ set -eu
 SDK_PATH="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 CACHE_ROOT="${TMPDIR:-/private/tmp}/bridgey-swift-build"
 CONFIGURATION="${CONFIGURATION:-debug}"
-APP_PATH=".build/$CONFIGURATION/BridgeyMac.app"
+APP_PATH=".build/$CONFIGURATION/Bridgey.app"
 
 env \
   SDKROOT="$SDK_PATH" \

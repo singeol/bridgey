@@ -16,8 +16,8 @@ android {
         applicationId = "dev.bridgey.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.5.0-alpha.5"
+        versionCode = 16
+        versionName = "0.5.0-alpha.6"
     }
 
     signingConfigs {

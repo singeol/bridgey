@@ -10,7 +10,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.5.0-alpha.5 development. Android and macOS clients support
+> Project status: v0.5.0-alpha.6 development. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, Find Device, and starting a
 > phone call from macOS over the local network. Discovery data is intentionally
@@ -121,7 +121,7 @@ package:
 ```bash
 cd macos
 ./build-app.sh
-open .build/debug/BridgeyMac.app
+open .build/debug/Bridgey.app
 ```
 
 The `.app` bundle is required for Notification Center integration. The raw
@@ -198,6 +198,11 @@ mode by default: tap the call-request notification to review the number in the
 system dialer. An explicit Android Settings switch enables direct calls and
 requests the `CALL_PHONE` permission; emergency numbers are never dialled
 directly by Bridgey.
+
+Bridgey can also handle `tel:` links from browsers. In macOS Settings, press
+**Use Bridgey for phone links** once; this explicit action makes Bridgey the
+default phone-link handler. Browsers still show their external-application
+confirmation before opening Bridgey and sending the validated number.
 
 Connected devices exchange their effective feature state over the encrypted
 session. A feature is available only when both devices enable it, so controls

@@ -29,13 +29,24 @@
     <key>CFBundleShortVersionString</key>
     <string>0.5.0</string>
     <key>CFBundleVersion</key>
-    <string>15</string>
+    <string>16</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSUserNotificationAlertStyle</key>
     <string>alert</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>dev.bridgey.mac.phone</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>tel</string></array>
+        </dict>
+    </array>
     <key>NSServices</key>
     <array>
         <dict>

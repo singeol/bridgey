@@ -4,7 +4,7 @@ set -eu
 CONFIGURATION=release ./build-app.sh
 
 OUTPUT_DIR="${OUTPUT_DIR:-dist}"
-APP_PATH=".build/release/BridgeyMac.app"
+APP_PATH=".build/release/Bridgey.app"
 DMG_ROOT="${TMPDIR:-/private/tmp}/bridgey-dmg"
 
 mkdir -p "$OUTPUT_DIR"

@@ -1,27 +1,24 @@
-# Bridgey v0.5.0-alpha.5
+# Bridgey v0.5.0-alpha.6
 
-This fifth Bridgey v0.5 preview adds a permission-conscious way to start a
-phone call from macOS through a paired Android phone.
+This sixth Bridgey v0.5 preview makes browser phone-number links open Bridgey
+and fixes inconsistent macOS application naming during installation.
 
-## Changes since alpha.4
+## Changes since alpha.5
 
-- Copy a phone number and click **Call** in the Bridgey menu, or press
-  `Control-Option-P`, to send the request to Android.
-- In macOS applications that support Services, select a number and choose
-  **Services → Call with Bridgey** without first opening the menu-bar panel.
-- Android uses safe confirmation mode by default: a call-request notification
-  opens the number in the system dialer, where the user starts the call.
-- Android Settings offers an optional **Start calls without confirmation**
-  switch. Only this direct mode requests the Phone permission.
-- Requests use the authenticated encrypted session, strict 3–15 digit number
-  validation, replay protection, a three-second rate limit, per-device feature
-  policy, delivery status, and a timeout instead of an indefinite Sending state.
-- USSD commands, extensions, arbitrary dial strings, and direct emergency calls
-  are rejected. Phone numbers are excluded from diagnostics.
-- Older Bridgey builds treat the new capability as unavailable instead of
-  disconnecting or showing a control that cannot work.
-- Added Android and macOS normalization regression tests and an Android
-  permission-manifest regression check.
+- macOS Settings now has **Use Bridgey for phone links**. Activating it makes
+  Bridgey the default handler for `tel:` URLs through the supported macOS API.
+- Clicking a phone number in Google, a browser, or another Mac application can
+  now show **Open Bridgey?** before the validated number is sent to Android.
+- Registration is explicit: installing Bridgey alone does not silently replace
+  the user's current phone-link handler.
+- `tel:` input uses the same strict validation as clipboard and Services calls;
+  USSD commands, letters, extensions, malformed escapes, and oversized numbers
+  are rejected.
+- macOS build, DMG, and ZIP contents are now consistently named `Bridgey.app`.
+  This prevents a new `BridgeyMac.app` from sitting beside an older
+  `Bridgey.app` and leaving the old build running.
+- Added regression coverage for ordinary, formatted, encoded, and malicious
+  `tel:` links.
 
 ## Downloads
 
@@ -32,12 +29,10 @@ phone call from macOS through a paired Android phone.
 
 ## Known limitations
 
-- macOS Services availability depends on the source application; the clipboard
-  button and global shortcut remain available everywhere.
+- The browser controls the wording and placement of its external-application
+  confirmation dialog.
 - Direct calls require Android telephony hardware and explicit Phone permission.
 - Bridgey does not read contacts, SMS history, or call logs.
-- Full SMS history and arbitrary SMS composition remain excluded because they
-  require restricted permissions and distribution-policy approval.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
   credentials are configured.

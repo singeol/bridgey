@@ -8,6 +8,7 @@ struct BridgeyApp: App {
     @StateObject private var settings: BridgeySettings
     private let settingsWindow: SettingsWindowController
     private let callServiceProvider: CallServiceProvider
+    private let phoneURLHandler: PhoneURLHandler
 
     init() {
         LegacyPreferences.migrateIfNeeded()
@@ -21,6 +22,7 @@ struct BridgeyApp: App {
         let callServiceProvider = CallServiceProvider { [weak pairing] number in pairing?.sendCall(number) }
         self.callServiceProvider = callServiceProvider
         NSApplication.shared.servicesProvider = callServiceProvider
+        phoneURLHandler = PhoneURLHandler { [weak pairing] number in pairing?.sendCall(number) }
         settingsWindow = SettingsWindowController(discovery: discovery, pairing: pairing, settings: settings)
     }
 
@@ -422,6 +424,7 @@ private struct SettingsView: View {
     @ObservedObject var pairing: PairingCoordinator
     @ObservedObject var settings: BridgeySettings
     @State private var editedName = ""
+    @State private var phoneLinkStatus: String?
 
     var body: some View {
         Form {
@@ -462,6 +465,16 @@ private struct SettingsView: View {
                     Button(pairing.notificationPermissionDetermined ? "Open notification settings" : "Enable Mac notifications") {
                         pairing.enableNotifications()
                     }
+                }
+            }
+            Section("Phone links") {
+                Text("Make Bridgey handle tel: links from browsers and other Mac applications. The browser still asks before opening Bridgey.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Use Bridgey for phone links") { makeDefaultPhoneLinkHandler() }
+                if let phoneLinkStatus {
+                    Text(phoneLinkStatus)
+                        .font(.caption)
+                        .foregroundStyle(phoneLinkStatus.hasPrefix("Could not") ? .red : .secondary)
                 }
             }
             Section("Notification history") {
@@ -547,5 +560,22 @@ private struct SettingsView: View {
     private var connectedDeviceID: String? {
         if case let .connected(deviceID, _) = pairing.state { return deviceID }
         return nil
+    }
+
+    private func makeDefaultPhoneLinkHandler() {
+        let applicationURL = Bundle.main.bundleURL
+        guard applicationURL.pathExtension == "app" else {
+            phoneLinkStatus = "Could not register: run the installed Bridgey.app bundle."
+            return
+        }
+        NSWorkspace.shared.setDefaultApplication(
+            at: applicationURL,
+            toOpenURLsWithScheme: "tel"
+        ) { error in
+            DispatchQueue.main.async {
+                phoneLinkStatus = error.map { "Could not register Bridgey: \($0.localizedDescription)" }
+                    ?? "Bridgey will now open phone links."
+            }
+        }
     }
 }
