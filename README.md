@@ -62,8 +62,8 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Synchronize notification dismissal/removal state between Android and macOS
 - [x] Support notification action buttons and inline replies when Android exposes them
 - [x] Add per-application notification filters and a private local history
-- [ ] Research SMS viewing and replies with explicit permissions and platform-policy checks
-- [ ] Show incoming-call state and add supported mute/reject actions
+- [x] Research SMS viewing/replies and document the permission-safe notification-action scope
+- [x] Show call state and expose only the actions supplied by the Android phone application
 
 ### v0.6 — remote interaction
 

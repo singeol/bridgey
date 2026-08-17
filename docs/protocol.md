@@ -208,7 +208,11 @@ In the current JSON transport, the notification payload is AES-GCM encrypted
 and contains `packageName`, `applicationName`, `notificationId`, `title`, `text`,
 and the Android post time in Unix milliseconds. Android excludes Bridgey's own
 foreground notification, ongoing items, group summaries, secret notifications,
-and empty content before encryption.
+and empty content before encryption. A `CATEGORY_CALL` notification may include
+`callType` with one of `incoming`, `ongoing`, `screening`, or `unknown`; calls
+are the only ongoing notifications forwarded. Call controls reuse the same
+scoped notification action tokens and therefore exist only when the Android
+phone application supplies the corresponding `PendingIntent`.
 
 ### Find device (`find-device.v1`)
 

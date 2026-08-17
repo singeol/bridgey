@@ -331,6 +331,7 @@ class PairingCoordinator(
         timestamp: Long,
         actions: List<ForwardedNotificationAction> = emptyList(),
         applicationIcon: String? = null,
+        callType: String? = null,
     ) {
         if (!isFeatureAvailable(BridgeyFeature.NOTIFICATIONS)) return
         val connectedSession = session ?: return
@@ -347,6 +348,9 @@ class PairingCoordinator(
                 .apply {
                     if (applicationIcon != null && applicationIcon.length <= MAX_NOTIFICATION_ICON_BASE64_LENGTH) {
                         put("applicationIcon", applicationIcon)
+                    }
+                    if (callType in setOf("incoming", "ongoing", "screening", "unknown")) {
+                        put("callType", callType)
                     }
                 }
                 .put("actions", JSONArray().apply {

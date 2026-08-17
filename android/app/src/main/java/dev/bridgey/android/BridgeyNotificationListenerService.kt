@@ -49,7 +49,8 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
 
         val notification = sbn.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        if (notification.flags and Notification.FLAG_ONGOING_EVENT != 0) return
+        val isCall = notification.category == Notification.CATEGORY_CALL
+        if (shouldIgnoreOngoingNotification(notification.flags, notification.category)) return
         if (notification.visibility == Notification.VISIBILITY_SECRET) return
 
         val ranking = Ranking()
@@ -70,6 +71,7 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         val notificationId = notificationToken(sbn.key)
         forwardedNotifications.record(notificationId, sbn.key, sbn.packageName)
         val actions = storeActions(notificationId, notification.actions.orEmpty())
+        val callType = if (isCall) notificationCallType(notification.extras.getInt("android.callType", 0)) else null
         bridgey.pairing.sendNotification(
             packageName = sbn.packageName,
             applicationName = applicationName,
@@ -79,6 +81,7 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
             timestamp = sbn.postTime,
             actions = actions,
             applicationIcon = applicationIcon,
+            callType = callType,
         )
     }
 
@@ -258,6 +261,16 @@ internal fun notificationToken(systemKey: String): String = MessageDigest.getIns
     .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
 internal fun notificationActionToken(notificationId: String, index: Int): String = notificationToken("$notificationId\u0000$index")
+
+internal fun shouldIgnoreOngoingNotification(flags: Int, category: String?): Boolean =
+    flags and Notification.FLAG_ONGOING_EVENT != 0 && category != Notification.CATEGORY_CALL
+
+internal fun notificationCallType(value: Int): String = when (value) {
+    1 -> "incoming"
+    2 -> "ongoing"
+    3 -> "screening"
+    else -> "unknown"
+}
 
 object NotificationAccess {
     fun isEnabled(context: Context): Boolean {

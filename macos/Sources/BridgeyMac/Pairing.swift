@@ -21,6 +21,21 @@ struct RemoteBatteryStatus: Equatable {
     let isCharging: Bool
 }
 
+struct RemoteCallAction: Identifiable, Equatable {
+    let id: String
+    let title: String
+}
+
+struct RemoteCallStatus: Equatable {
+    let notificationID: String
+    let deviceID: String
+    let applicationName: String
+    let caller: String
+    let detail: String
+    let type: String
+    let actions: [RemoteCallAction]
+}
+
 struct FileTransferRow: Identifiable, Equatable {
     let id: String
     let name: String
@@ -65,6 +80,7 @@ private struct RemoteNotificationPayload: Codable {
     let timestamp: Int64
     let actions: [RemoteNotificationActionPayload]?
     let applicationIcon: String?
+    let callType: String?
 }
 
 private struct RemoteNotificationActionPayload: Codable {
@@ -153,6 +169,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var androidRinging = false
     @Published private(set) var remoteFeatures = defaultRemoteFeatureState()
     @Published private(set) var notificationHistory: [NotificationHistoryItem] = []
+    @Published private(set) var remoteCall: RemoteCallStatus?
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -247,6 +264,7 @@ final class PairingCoordinator: ObservableObject {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
+                    if !self.featureEnabled(.notifications) { self.remoteCall = nil }
                     if value.2 {
                         self.notificationHistory = self.notificationHistoryStore.load()
                     } else {
@@ -324,6 +342,7 @@ final class PairingCoordinator: ObservableObject {
         session?.close()
         session = current
         remoteFeatures = defaultRemoteFeatureState()
+        remoteCall = nil
         scheduleConnectionTimeout(for: current)
         configure(current) { [weak self, weak current] in
             guard let self, let current, current.privateKey != nil else { return }
@@ -370,6 +389,7 @@ final class PairingCoordinator: ObservableObject {
         current?.close()
         stopMacSound()
         androidRinging = false
+        remoteCall = nil
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
@@ -384,6 +404,7 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         remoteBattery = nil
+        remoteCall = nil
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
         state = .idle
@@ -764,6 +785,7 @@ final class PairingCoordinator: ObservableObject {
         current.initiatedLocally = false
         session = current
         remoteFeatures = defaultRemoteFeatureState()
+        remoteCall = nil
         configure(current, onReady: {})
     }
 
@@ -786,6 +808,7 @@ final class PairingCoordinator: ObservableObject {
             if case .connected = self.state {
                 self.session = nil
                 self.remoteBattery = nil
+                self.remoteCall = nil
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.state = .idle
                 NSLog("TRANSPORT disconnected")
@@ -810,6 +833,7 @@ final class PairingCoordinator: ObservableObject {
                     self.connectionTimeoutWorkItem?.cancel()
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
+                    self.remoteCall = nil
                     current.close()
                     self.state = .failed("Local Network access is off. Enable Bridgey in System Settings → Privacy & Security → Local Network.")
                     self.diagnostics.record(category: "transport", event: "local_network_denied", outcome: "permission_required")
@@ -904,6 +928,7 @@ final class PairingCoordinator: ObservableObject {
                 })
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
+                if remoteFeatures[.notifications] == false { remoteCall = nil }
                 if remoteFeatures[.files] == false && fileTransferActive {
                     cancelFileTransfer()
                     fileTransferStatus = nil
@@ -998,10 +1023,12 @@ final class PairingCoordinator: ObservableObject {
                       let payload = try? JSONDecoder().decode(RemoteNotificationPayload.self, from: plaintext),
                       !payload.packageName.isEmpty,
                       !payload.applicationName.isEmpty,
+                      payload.callType == nil || normalizedRemoteCallType(payload.callType) != nil,
                       (!payload.title.isEmpty || !payload.text.isEmpty) else {
                     throw PairingError.invalidMessage
                 }
                 recordNotificationHistory(payload, deviceID: current.remoteDeviceID)
+                updateRemoteCall(payload, deviceID: current.remoteDeviceID)
                 postNotification(payload, deviceID: current.remoteDeviceID)
             case "notifications.remove":
                 guard featureEnabled(.notifications, current: current),
@@ -1366,7 +1393,7 @@ final class PairingCoordinator: ObservableObject {
 
     private func postNotification(_ payload: RemoteNotificationPayload, deviceID: String) {
         let content = UNMutableNotificationContent()
-        content.title = payload.applicationName
+        content.title = payload.callType == nil ? payload.applicationName : remoteCallStatusTitle(payload.callType)
         content.subtitle = payload.title
         content.body = payload.text
         content.sound = .default
@@ -1391,6 +1418,32 @@ final class PairingCoordinator: ObservableObject {
                 NSLog("PLUGIN notification received package=%@", payload.packageName)
             }
         }
+    }
+
+    func performRemoteCallAction(_ action: RemoteCallAction) {
+        guard let call = remoteCall else { return }
+        performAndroidNotificationAction(
+            call.notificationID,
+            deviceID: call.deviceID,
+            actionToken: action.id,
+            replyText: nil
+        )
+    }
+
+    private func updateRemoteCall(_ payload: RemoteNotificationPayload, deviceID: String) {
+        guard let callType = normalizedRemoteCallType(payload.callType) else { return }
+        let actions = (payload.actions ?? []).filter { !$0.allowsReply }.prefix(4).map {
+            RemoteCallAction(id: $0.actionToken, title: $0.title)
+        }
+        remoteCall = RemoteCallStatus(
+            notificationID: payload.notificationId,
+            deviceID: deviceID,
+            applicationName: payload.applicationName,
+            caller: payload.title,
+            detail: payload.text,
+            type: callType,
+            actions: actions
+        )
     }
 
     func clearNotificationHistory() {
@@ -1537,6 +1590,9 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func removeRemoteNotification(_ notificationID: String, deviceID: String) {
+        if remoteCall?.notificationID == notificationID && remoteCall?.deviceID == deviceID {
+            remoteCall = nil
+        }
         let identifier = remoteNotificationRequestIdentifier(deviceID: deviceID, notificationID: notificationID)
         let center = UNUserNotificationCenter.current()
         center.removeDeliveredNotifications(withIdentifiers: [identifier])

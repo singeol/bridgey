@@ -147,6 +147,34 @@ private struct BridgeyPanel: View {
                     .help("Disconnect")
             }
 
+            if let call = pairing.remoteCall {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(remoteCallStatusTitle(call.type), systemImage: "phone.arrow.down.left.fill")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                    Text(call.caller.isEmpty ? call.applicationName : call.caller)
+                        .font(.title3).fontWeight(.semibold).lineLimit(2)
+                    if !call.detail.isEmpty && call.detail != call.caller {
+                        Text(call.detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    if !call.actions.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(Array(call.actions.prefix(3))) { action in
+                                Button(action.title) { pairing.performRemoteCallAction(action) }
+                                    .buttonStyle(.bordered)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                    } else {
+                        Text("Use the phone to control this call.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
             HStack(spacing: 8) {
                 if pairing.isFeatureAvailable(.clipboard) {
                     actionButton("Clipboard", icon: "doc.on.clipboard") { pairing.sendClipboard() }

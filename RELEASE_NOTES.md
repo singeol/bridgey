@@ -20,6 +20,16 @@ the Mac.
   metadata, network service, account, or permission.
 - Added regression coverage for per-package mirrored-notification removal and
   history expiry, replacement, persistence, and size limits.
+- Android call notifications are now recognized even when marked ongoing. The
+  Mac shows a dedicated call card and exposes answer, decline, hang-up, mute, or
+  other controls only when the installed phone application supplies them.
+- Call type metadata and action tokens remain inside the existing encrypted
+  notification payload; call state is cleared on removal, feature disable, or
+  disconnect.
+- Completed the SMS/Call Log policy review. v0.5 keeps SMS viewing and replies
+  scoped to notification content and `RemoteInput`, avoiding new restricted
+  telephony permissions. The rationale and future approval requirements are
+  documented in `docs/sms-call-policy.md`.
 
 ## Downloads
 
@@ -32,8 +42,11 @@ the Mac.
 
 - Android does not expose a universal cross-application "read" operation;
   Bridgey forwards only actions explicitly supplied by the source application.
-- SMS and incoming-call integration remain research items because they require
-  sensitive permissions and platform-policy validation.
+- Call action availability and wording depend on the Android phone application;
+  Bridgey does not fabricate actions the source does not expose.
+- Full SMS history and arbitrary SMS composition are intentionally excluded
+  from v0.5 because they require restricted permissions and distribution-policy
+  approval.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
   credentials are configured.

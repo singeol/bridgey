@@ -106,7 +106,10 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   content enters the transport. macOS posts through `UserNotifications` and
   returns only the bounded action tokens supplied by Android. Optional local
   history is off by default, retains at most 200 items for seven days, and is
-  stored with owner-only permissions.
+  stored with owner-only permissions. Ongoing `CATEGORY_CALL` notifications are
+  the sole exception to the ongoing-notification filter: their bounded call
+  type and existing action tokens drive a temporary macOS call card. Bridgey
+  never invents a reject, answer, or mute operation.
 
 ## Platform lifecycle
 

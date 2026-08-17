@@ -1,5 +1,6 @@
 package dev.bridgey.android
 
+import android.app.Notification
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,5 +44,17 @@ class ForwardedNotificationRegistryTest {
         assertTrue(token == notificationToken("0|package|42|tag|uid"))
         assertFalse(token == notificationToken("different"))
         assertFalse(notificationActionToken(token, 0) == notificationActionToken(token, 1))
+    }
+
+    @Test fun ongoingCallsAreForwardedWhileOtherOngoingNotificationsAreIgnored() {
+        assertFalse(shouldIgnoreOngoingNotification(Notification.FLAG_ONGOING_EVENT, Notification.CATEGORY_CALL))
+        assertTrue(shouldIgnoreOngoingNotification(Notification.FLAG_ONGOING_EVENT, Notification.CATEGORY_SERVICE))
+        assertFalse(shouldIgnoreOngoingNotification(0, Notification.CATEGORY_SERVICE))
+    }
+
+    @Test fun readsBoundedCallTypeWithoutPhonePermissions() {
+        assertTrue(notificationCallType(1) == "incoming")
+        assertTrue(notificationCallType(2) == "ongoing")
+        assertTrue(notificationCallType(99) == "unknown")
     }
 }
