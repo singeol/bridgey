@@ -273,12 +273,23 @@ private fun notificationActionCandidates(
 private fun resolvedNotificationCallType(notification: Notification): String {
     val reportedType = notificationCallType(notification.extras.getInt("android.callType", 0))
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return reportedType
-    return resolvedNotificationCallType(
+    val hasAnswer = notification.extras.pendingIntent(Notification.EXTRA_ANSWER_INTENT) != null
+    val hasDecline = notification.extras.pendingIntent(Notification.EXTRA_DECLINE_INTENT) != null
+    val hasHangUp = notification.extras.pendingIntent(Notification.EXTRA_HANG_UP_INTENT) != null
+    val hasFullScreenIntent = notification.fullScreenIntent != null
+    val resolvedType = resolvedNotificationCallType(
         reportedType = reportedType,
-        hasAnswer = notification.extras.pendingIntent(Notification.EXTRA_ANSWER_INTENT) != null,
-        hasDecline = notification.extras.pendingIntent(Notification.EXTRA_DECLINE_INTENT) != null,
-        hasHangUp = notification.extras.pendingIntent(Notification.EXTRA_HANG_UP_INTENT) != null,
+        hasAnswer = hasAnswer,
+        hasDecline = hasDecline,
+        hasHangUp = hasHangUp,
+        hasFullScreenIntent = hasFullScreenIntent,
     )
+    android.util.Log.d(
+        "Bridgey",
+        "PLUGIN call state reported=$reportedType resolved=$resolvedType " +
+            "fullScreen=$hasFullScreenIntent answer=$hasAnswer decline=$hasDecline hangUp=$hasHangUp",
+    )
+    return resolvedType
 }
 
 internal fun resolvedNotificationCallType(
@@ -286,7 +297,11 @@ internal fun resolvedNotificationCallType(
     hasAnswer: Boolean,
     hasDecline: Boolean,
     hasHangUp: Boolean,
+    hasFullScreenIntent: Boolean = false,
 ): String = when {
+    // Samsung's dialer reports CALL_TYPE_ONGOING while the phone is still ringing.
+    // Its full-screen intent is the stable, language-independent incoming-call signal.
+    hasFullScreenIntent -> "incoming"
     hasAnswer && hasDecline && !hasHangUp -> "incoming"
     hasAnswer && hasHangUp && !hasDecline -> "screening"
     hasHangUp && !hasAnswer && !hasDecline -> "ongoing"

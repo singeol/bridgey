@@ -73,6 +73,27 @@ class ForwardedNotificationRegistryTest {
         assertTrue(resolvedNotificationCallType("ongoing", hasAnswer = true, hasDecline = true, hasHangUp = true) == "ongoing")
     }
 
+    @Test fun samsungFullScreenCallIntentOverridesItsIncorrectOngoingType() {
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "ongoing",
+                hasAnswer = false,
+                hasDecline = false,
+                hasHangUp = true,
+                hasFullScreenIntent = true,
+            ) == "incoming",
+        )
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "ongoing",
+                hasAnswer = false,
+                hasDecline = false,
+                hasHangUp = true,
+                hasFullScreenIntent = false,
+            ) == "ongoing",
+        )
+    }
+
     @Test fun ongoingCallPostsUseASettleDelayToSuppressTerminalSamsungUpdates() {
         assertTrue(shouldDelayCallPost("ongoing"))
         assertFalse(shouldDelayCallPost("incoming"))
