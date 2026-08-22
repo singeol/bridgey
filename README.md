@@ -35,6 +35,9 @@ feasibility reviews.
 ## Roadmap
 
 The roadmap describes intended direction rather than fixed release dates.
+Bridgey 1.0 is defined as a stable, secure local Android–macOS companion, not
+as complete feature parity with KDE Connect. Experimental plugins do not block
+the stable release.
 
 ### v0.2.1 — settings and quality
 
@@ -59,7 +62,7 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Add richer clipboard content after text synchronization is fully hardened
 - [x] Improve accessibility, localization readiness, and first-run guidance
 
-### v0.5 — notifications and communication
+### v0.5.0 — notifications and communication
 
 - [x] Synchronize notification dismissal/removal state between Android and macOS
 - [x] Support notification action buttons and inline replies when Android exposes them
@@ -68,22 +71,92 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Show live call state with explicit Answer, Decline, and Hang Up controls
 - [x] Start a validated phone call from selected macOS text or the clipboard
 
-### v0.6 — remote interaction
+### v0.6.0 — media and quick actions
 
-- [ ] Add media playback controls and shared media information
-- [ ] Add presentation controls and an opt-in remote keyboard/touchpad
-- [ ] Add explicitly confirmed screen sharing between Android and desktop
-- [ ] Add scoped remote file browsing without unrestricted filesystem access
-- [ ] Define a permission model and audit log for every remote-control capability
+- [ ] Control macOS media from Android: play/pause, previous/next, seek, and volume
+- [ ] Show bounded now-playing metadata and artwork where public platform APIs allow it
+- [ ] Optionally pause or mute media while a phone call is ringing or active
+- [ ] Send and explicitly open web links in either direction
+- [ ] Add a lightweight Ping action separate from Find Device
+- [ ] Show Mac battery status on Android
+- [ ] Add an Android Quick Settings tile and configurable macOS shortcuts
+- [ ] Complete multi-OEM stabilization of the v0.5 call and notification lifecycle
 
-### Later / exploratory
+### v0.7.0 — remote input and presentations
+
+- [ ] Use Android as an opt-in macOS touchpad and keyboard
+- [ ] Support pointer movement, clicks, scrolling, dragging, and bounded text input
+- [ ] Add presentation actions for previous/next, start/full screen, escape, and laser pointer
+- [ ] Request macOS Accessibility access only when remote input is explicitly enabled
+- [ ] Require a visible active-session indicator and an immediate local stop control
+- [ ] Rate-limit remote input and keep a private audit log of remote-control sessions
+- [ ] Grant remote-control capabilities independently for every trusted device
+
+### v0.8.0 — Files 2.0 and multiple devices
+
+- [ ] Send multiple files and folders with a visible queue and deterministic conflict handling
+- [ ] Resume verified transfers after network interruption or application restart
+- [ ] Browse only Android folders explicitly granted through the system Storage Access Framework
+- [ ] Upload to and download from granted folders without broad storage permissions
+- [ ] Improve Finder, Quick Look, Downloads, and transfer-history integration
+- [ ] Support multiple simultaneous trusted-device sessions with per-device settings
+- [ ] Stress-test cancellation, reconnection, and multi-gigabyte transfers in both directions
+
+### v0.9.0 — automation and experimental communication
+
+- [ ] Add locally configured actions for lock, sleep, screensaver, volume, and launching an app
+- [ ] Permit custom automation only through a local allowlist; never expose a remote shell
+- [ ] Add Android Device Controls/widgets and browser integrations for link handoff
+- [ ] Add a privacy-preserving connection health and diagnostics view
+- [ ] Prototype explicitly confirmed, view-only screen sharing in both directions
+- [ ] Evaluate full SMS conversations, new-message sending, and optional contact names as a
+      separately consented plugin and distribution flavor
+- [ ] Keep notification-based message replies as the permission-light fallback
+
+Screen sharing must display a persistent local indicator and require explicit
+confirmation for each session. Full SMS access depends on distribution-policy
+approval, a privacy policy, prominent disclosure, retention controls, and a
+separate permission review. Neither experimental capability blocks v1.0.
+
+### v1.0.0 — stable local companion
+
+- [ ] Freeze and document the Bridgey Protocol v1 compatibility contract
+- [ ] Preserve trust, settings, and local history through supported upgrades and migrations
+- [ ] Recover reliably after sleep, Wi-Fi changes, process restarts, and interrupted transfers
+- [ ] Run long-lived, malformed-input, fuzz, and cross-platform integration tests
+- [ ] Publish a tested Android/OEM and macOS compatibility matrix
+- [ ] Complete security, privacy, accessibility, and English/Russian localization reviews
+- [ ] Explain every optional permission in onboarding and provide local-data reset controls
+- [ ] Publish checksums, SBOM/provenance, diagnostics guidance, and user/developer documentation
+- [ ] Provide a clear update path and repeatable Android and macOS release packaging
+
+Developer ID signing and notarization remain desirable when an Apple Developer
+membership is available, but do not prevent a documented open-source v1.0.
+
+### Beyond KDE Connect
+
+Bridgey should keep its local-first scope while developing capabilities that
+are more explicit and auditable than a simple feature-for-feature clone:
+
+- [ ] One-time remote permissions, including grants limited to a single session or time window
+- [ ] A private per-device audit log for remote input, automation, files, and sensitive actions
+- [ ] Resumable content-addressed transfers with end-to-end integrity verification
+- [ ] Image and file clipboard handoff with explicit user interaction on Android
+- [ ] QR-assisted pairing and temporary guest pairing without a permanent trust record
+- [ ] Home, Work, and Public Network profiles with conservative defaults on unfamiliar networks
+- [ ] A documented plugin SDK so future clients can extend the public protocol safely
+- [ ] Optional end-to-end encrypted relay without making accounts or cloud service mandatory
+
+### After v1.0 / exploratory
 
 - [ ] Linux client using the public Bridgey protocol
-- [ ] Multiple simultaneous trusted-device sessions
-- [ ] Optional accounts for device recovery without making accounts mandatory
-- [ ] Optional end-to-end encrypted cloud relay for devices outside the local network
-- [ ] Carefully scoped command/device automation without providing a remote shell
-- [ ] Developer ID signing and notarization when an Apple Developer membership is available
+- [ ] Windows and iOS clients where platform restrictions permit useful background behavior
+- [ ] Bluetooth transport fallback when local-network discovery is unavailable
+- [ ] Optional accounts for recovery without making accounts mandatory
+- [ ] End-to-end encrypted off-LAN relay with direct connections preferred
+- [ ] Full Android screen control only after a separate accessibility and abuse review
+- [ ] Contacts and call-history synchronization only as separately consented plugins
+- [ ] Developer ID signing, notarization, and a polished macOS updater
 
 ## Repository
 
