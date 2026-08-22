@@ -1,19 +1,40 @@
-# Bridgey v0.5.0-alpha.9
+# Bridgey v0.5.0-alpha.10
 
-This ninth Bridgey v0.5 preview fixes incoming-call classification on Samsung
-devices across heads-up and full-screen call presentations.
+This final Bridgey v0.5 preview completes reliable cellular call status and
+controls between Android and macOS and adds a focused native call experience on
+the Mac.
 
-## Changes since alpha.8
+## Changes since alpha.9
 
-- Samsung incoming calls are now recognized by their system full-screen call
-  intent when the dialer incorrectly reports them as already ongoing.
-- Incoming calls remain classified correctly when they open full screen from
-  the home screen or after tapping a heads-up call notification over another app.
-- The normal ongoing-call state remains available after the incoming-call
-  full-screen intent disappears.
-- Added privacy-safe diagnostic logging for call-state signals without recording
-  the caller number or notification contents.
-- Added regression coverage for Samsung's conflicting `CallStyle` state.
+- Android now uses the platform telephony state to distinguish ringing,
+  active/outgoing, and ended calls when an OEM dialer publishes ambiguous call
+  notifications.
+- Added real Answer, Decline, and Hang Up controls through Android's protected
+  telecom APIs. The optional call-integration switch requests only
+  `CALL_PHONE`, `READ_PHONE_STATE`, and `ANSWER_PHONE_CALLS`; Bridgey still does
+  not request contacts or call-log access.
+- Incoming calls show Answer on the left in green and Decline on the right in
+  red in a compact non-activating macOS panel. Active and outgoing calls show a
+  full-width red Hang Up control.
+- The call panel stays above normal windows and across Spaces without taking
+  focus, sounds once for a new incoming call, can be hidden for the current
+  call, and disappears automatically when the call ends.
+- Suppressed late Samsung dialer updates after the phone returns to idle, which
+  previously could briefly recreate an incorrect incoming-call card.
+- Updated Gradle Wrapper to 9.7.1 and kotlinx-coroutines to 1.11.0 after clean
+  Build, CodeQL, and dependency-review checks.
+- Expanded call-state, action-ordering, permission, and OEM regression tests and
+  updated the privacy and protocol documentation.
+
+## Test focus
+
+- Incoming call: Answer and Decline, transition to Call in progress, Hang Up,
+  and automatic dismissal.
+- Outgoing call from clipboard, macOS Services, and a browser `tel:` link.
+- Notification buttons, inline reply, dismissal synchronization, application
+  filters, and private local history.
+- Reconnect after restarting either client, followed by clipboard, file,
+  Find Device, and battery smoke tests.
 
 ## Downloads
 
@@ -24,9 +45,8 @@ devices across heads-up and full-screen call presentations.
 
 ## Known limitations
 
-- Call controls depend on the safe `PendingIntent` actions exposed by the
-  Android phone application; Bridgey does not request call-log access.
-- Direct calls require Android telephony hardware and explicit Phone permission.
+- Full call status and controls require explicit Android Phone permissions;
+  confirmation mode remains available without that opt-in.
 - Bridgey does not read contacts, SMS history, or call logs.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
