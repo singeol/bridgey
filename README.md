@@ -10,7 +10,7 @@ to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux
 client can later implement the same public protocol without Android changes.
 
-> Project status: v0.5.0-alpha.8 development. Android and macOS clients support
+> Project status: v0.5.0-alpha.9 development. Android and macOS clients support
 > secure pairing, automatic reconnect, clipboard sharing, file transfer,
 > Android notification forwarding, battery status, Find Device, and starting a
 > phone call from macOS over the local network. Discovery data is intentionally

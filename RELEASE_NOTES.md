@@ -1,22 +1,19 @@
-# Bridgey v0.5.0-alpha.8
+# Bridgey v0.5.0-alpha.9
 
-This eighth Bridgey v0.5 preview improves Samsung call-state handling and makes
-browser phone links reliable during a cold Bridgey launch or reconnect.
+This ninth Bridgey v0.5 preview fixes incoming-call classification on Samsung
+devices across heads-up and full-screen call presentations.
 
-## Changes since alpha.7
+## Changes since alpha.8
 
-- Call state is derived from the actual Android `CallStyle` answer, decline,
-  and hang-up intents instead of trusting an inconsistent OEM call-type value.
-- Short terminal `ongoing` updates emitted by Samsung while a call is ending
-  are settled before forwarding, preventing a false **Call in progress** banner.
-- `tel:` URLs are now received by the early macOS application delegate, so a
-  phone number is retained when the browser launches Bridgey from a stopped state.
-- Browser and macOS Services call requests wait up to 30 seconds for the secure
-  Android connection and feature negotiation instead of failing during startup.
-- Pending call requests are bounded, expire safely, and are cleared when Bridgey
-  or the Calls feature is turned off.
-- Added regression coverage for Samsung call-state conflicts, terminal call
-  updates, cold-launch URL queuing, and reconnect dispatch readiness.
+- Samsung incoming calls are now recognized by their system full-screen call
+  intent when the dialer incorrectly reports them as already ongoing.
+- Incoming calls remain classified correctly when they open full screen from
+  the home screen or after tapping a heads-up call notification over another app.
+- The normal ongoing-call state remains available after the incoming-call
+  full-screen intent disappears.
+- Added privacy-safe diagnostic logging for call-state signals without recording
+  the caller number or notification contents.
+- Added regression coverage for Samsung's conflicting `CallStyle` state.
 
 ## Downloads
 
