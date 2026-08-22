@@ -201,6 +201,9 @@ final class PairingCoordinator: ObservableObject {
     private var callRequestID: String?
     private var callTimeoutWorkItem: DispatchWorkItem?
     private var callStatusClearWorkItem: DispatchWorkItem?
+    private var pendingCallNumber: String?
+    private var pendingCallExpiryWorkItem: DispatchWorkItem?
+    private var remoteFeatureStateReceived = false
     private var clipboardSendID: String?
     private var clipboardTimeoutWorkItem: DispatchWorkItem?
     private let notificationPresenter = NotificationPresenter()
@@ -281,7 +284,10 @@ final class PairingCoordinator: ObservableObject {
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     if !self.featureEnabled(.notifications) { self.clearRemoteCall() }
-                    if !self.featureEnabled(.calls) { self.clearCallStatus() }
+                    if !self.featureEnabled(.calls) {
+                        self.clearPendingCall()
+                        self.clearCallStatus()
+                    }
                     if value.2 {
                         self.notificationHistory = self.notificationHistoryStore.load()
                     } else {
@@ -359,6 +365,7 @@ final class PairingCoordinator: ObservableObject {
         session?.close()
         session = current
         remoteFeatures = defaultRemoteFeatureState()
+        remoteFeatureStateReceived = false
         clearRemoteCall()
         scheduleConnectionTimeout(for: current)
         configure(current) { [weak self, weak current] in
@@ -407,9 +414,11 @@ final class PairingCoordinator: ObservableObject {
         stopMacSound()
         androidRinging = false
         clearRemoteCall()
+        clearPendingCall()
         clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
+        remoteFeatureStateReceived = false
         state = .idle
     }
 
@@ -423,9 +432,11 @@ final class PairingCoordinator: ObservableObject {
         androidRinging = false
         remoteBattery = nil
         clearRemoteCall()
+        clearPendingCall()
         clearCallStatus()
         clearClipboardSendStatus()
         remoteFeatures = defaultRemoteFeatureState()
+        remoteFeatureStateReceived = false
         state = .idle
     }
 
@@ -447,6 +458,27 @@ final class PairingCoordinator: ObservableObject {
             return
         }
         sendCall(value)
+    }
+
+    func sendCallWhenConnected(_ value: String) {
+        guard let number = normalizedPhoneNumber(value) else {
+            setTransientCallStatus("Phone link does not contain a valid number")
+            return
+        }
+        pendingCallNumber = number
+        pendingCallExpiryWorkItem?.cancel()
+        if flushPendingCallIfPossible() { return }
+        callStatusClearWorkItem?.cancel()
+        callStatusClearWorkItem = nil
+        callStatus = "Waiting for Android connection…"
+        let expiry = DispatchWorkItem { [weak self] in
+            guard let self, self.pendingCallNumber == number else { return }
+            self.pendingCallNumber = nil
+            self.pendingCallExpiryWorkItem = nil
+            self.setTransientCallStatus("Android did not connect in time")
+        }
+        pendingCallExpiryWorkItem = expiry
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: expiry)
     }
 
     func sendCall(_ value: String) {
@@ -493,6 +525,28 @@ final class PairingCoordinator: ObservableObject {
         callStatusClearWorkItem = nil
         callRequestID = nil
         callStatus = nil
+    }
+
+    @discardableResult
+    private func flushPendingCallIfPossible() -> Bool {
+        let isConnected: Bool
+        if case .connected = state { isConnected = true } else { isConnected = false }
+        guard let number = pendingCallNumber,
+              pendingPhoneCallCanDispatch(
+                isConnected: isConnected,
+                featureStateReceived: remoteFeatureStateReceived
+              ) else { return false }
+        pendingCallNumber = nil
+        pendingCallExpiryWorkItem?.cancel()
+        pendingCallExpiryWorkItem = nil
+        sendCall(number)
+        return true
+    }
+
+    private func clearPendingCall() {
+        pendingCallNumber = nil
+        pendingCallExpiryWorkItem?.cancel()
+        pendingCallExpiryWorkItem = nil
     }
 
     private func setTransientCallStatus(_ status: String) {
@@ -869,6 +923,7 @@ final class PairingCoordinator: ObservableObject {
         current.initiatedLocally = false
         session = current
         remoteFeatures = defaultRemoteFeatureState()
+        remoteFeatureStateReceived = false
         clearRemoteCall()
         configure(current, onReady: {})
     }
@@ -895,6 +950,7 @@ final class PairingCoordinator: ObservableObject {
                 self.remoteBattery = nil
                 self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
+                self.remoteFeatureStateReceived = false
                 self.state = .idle
                 NSLog("TRANSPORT disconnected")
                 self.diagnostics.record(category: "transport", event: "disconnected", outcome: "reconnecting")
@@ -919,6 +975,7 @@ final class PairingCoordinator: ObservableObject {
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
                     self.clearRemoteCall()
+                    self.remoteFeatureStateReceived = false
                     current.close()
                     self.state = .failed("Local Network access is off. Enable Bridgey in System Settings → Privacy & Security → Local Network.")
                     self.diagnostics.record(category: "transport", event: "local_network_denied", outcome: "permission_required")
@@ -1011,6 +1068,7 @@ final class PairingCoordinator: ObservableObject {
                 remoteFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
                     ($0, payload.features[$0.rawValue] ?? false)
                 })
+                remoteFeatureStateReceived = true
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
                 if remoteFeatures[.notifications] == false { clearRemoteCall() }
@@ -1023,6 +1081,7 @@ final class PairingCoordinator: ObservableObject {
                     stopMacSound()
                     androidRinging = false
                 }
+                flushPendingCallIfPossible()
             case "clipboard.update", "clipboard.rich":
                 guard featureEnabled(.clipboard, current: current) else {
                     current.send(PairingMessage(

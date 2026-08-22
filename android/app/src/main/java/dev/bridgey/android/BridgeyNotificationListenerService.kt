@@ -11,6 +11,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -23,8 +25,13 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
     private val storedActions = linkedMapOf<String, StoredNotificationAction>()
     private val actionTokensByNotificationId = mutableMapOf<String, List<String>>()
     private val applicationIcons = linkedMapOf<String, String>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val pendingCallPosts = mutableMapOf<String, Runnable>()
+    private val forwardedNotificationIds = mutableSetOf<String>()
 
     override fun onDestroy() {
+        pendingCallPosts.values.forEach(mainHandler::removeCallbacks)
+        pendingCallPosts.clear()
         if (activeService?.get() === this) activeService = null
         super.onDestroy()
     }
@@ -71,25 +78,42 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
 
         val notificationId = notificationToken(sbn.key)
         forwardedNotifications.record(notificationId, sbn.key, sbn.packageName)
-        val callType = if (isCall) notificationCallType(notification.extras.getInt("android.callType", 0)) else null
+        pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
+        val callType = if (isCall) resolvedNotificationCallType(notification) else null
         val actions = storeActions(notificationId, notificationActionCandidates(notification, callType))
-        bridgey.pairing.sendNotification(
-            packageName = sbn.packageName,
-            applicationName = applicationName,
-            notificationId = notificationId,
-            title = title,
-            text = text,
-            timestamp = sbn.postTime,
-            actions = actions,
-            applicationIcon = applicationIcon,
-            callType = callType,
-        )
+        val forward = Runnable {
+            pendingCallPosts.remove(notificationId)
+            if (forwardedNotifications.systemKey(notificationId) != sbn.key) return@Runnable
+            bridgey.pairing.sendNotification(
+                packageName = sbn.packageName,
+                applicationName = applicationName,
+                notificationId = notificationId,
+                title = title,
+                text = text,
+                timestamp = sbn.postTime,
+                actions = actions,
+                applicationIcon = applicationIcon,
+                callType = callType,
+            )
+            forwardedNotificationIds += notificationId
+            while (forwardedNotificationIds.size > MAX_TRACKED_FORWARDED_NOTIFICATIONS) {
+                forwardedNotificationIds.remove(forwardedNotificationIds.first())
+            }
+        }
+        if (shouldDelayCallPost(callType)) {
+            pendingCallPosts[notificationId] = forward
+            mainHandler.postDelayed(forward, CALL_POST_SETTLE_DELAY_MS)
+        } else {
+            forward.run()
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         super.onNotificationRemoved(sbn)
         val notificationId = forwardedNotifications.removeSystemKey(sbn.key) ?: return
+        pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
         removeActions(notificationId)
+        if (!forwardedNotificationIds.remove(notificationId)) return
         val bridgey = application as BridgeyApplication
         if (!bridgey.isPrimaryUser || !bridgey.isBridgeyEnabled) return
         bridgey.pairing.sendNotificationRemoved(notificationId)
@@ -106,8 +130,9 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         if (enabled) return
         val bridgey = application as BridgeyApplication
         forwardedNotifications.removePackage(packageName).forEach { notificationId ->
+            pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
             removeActions(notificationId)
-            if (bridgey.isPrimaryUser && bridgey.isBridgeyEnabled) {
+            if (forwardedNotificationIds.remove(notificationId) && bridgey.isPrimaryUser && bridgey.isBridgeyEnabled) {
                 bridgey.pairing.sendNotificationRemoved(notificationId)
             }
         }
@@ -210,6 +235,8 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         private const val MAX_REPLY_LENGTH = 4_096
         private const val MAX_ICON_BYTES = 20 * 1024
         private const val MAX_CACHED_ICONS = 128
+        private const val MAX_TRACKED_FORWARDED_NOTIFICATIONS = 512
+        private const val CALL_POST_SETTLE_DELAY_MS = 450L
         private val ICON_SIZES = listOf(64, 48, 32)
     }
 }
@@ -242,6 +269,31 @@ private fun notificationActionCandidates(
     }
     return candidates
 }
+
+private fun resolvedNotificationCallType(notification: Notification): String {
+    val reportedType = notificationCallType(notification.extras.getInt("android.callType", 0))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return reportedType
+    return resolvedNotificationCallType(
+        reportedType = reportedType,
+        hasAnswer = notification.extras.pendingIntent(Notification.EXTRA_ANSWER_INTENT) != null,
+        hasDecline = notification.extras.pendingIntent(Notification.EXTRA_DECLINE_INTENT) != null,
+        hasHangUp = notification.extras.pendingIntent(Notification.EXTRA_HANG_UP_INTENT) != null,
+    )
+}
+
+internal fun resolvedNotificationCallType(
+    reportedType: String,
+    hasAnswer: Boolean,
+    hasDecline: Boolean,
+    hasHangUp: Boolean,
+): String = when {
+    hasAnswer && hasDecline && !hasHangUp -> "incoming"
+    hasAnswer && hasHangUp && !hasDecline -> "screening"
+    hasHangUp && !hasAnswer && !hasDecline -> "ongoing"
+    else -> reportedType
+}
+
+internal fun shouldDelayCallPost(callType: String?): Boolean = callType == "ongoing"
 
 internal data class CallStyleFallbackAction(val title: String, val extraKey: String)
 

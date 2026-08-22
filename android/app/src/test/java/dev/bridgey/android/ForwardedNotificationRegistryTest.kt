@@ -64,4 +64,18 @@ class ForwardedNotificationRegistryTest {
         assertTrue(callStyleFallbackActions("screening").map { it.title } == listOf("Hang Up", "Answer"))
         assertTrue(callStyleFallbackActions("unknown").isEmpty())
     }
+
+    @Test fun requiredCallIntentsOverrideAnIncorrectReportedCallType() {
+        assertTrue(resolvedNotificationCallType("ongoing", hasAnswer = true, hasDecline = true, hasHangUp = false) == "incoming")
+        assertTrue(resolvedNotificationCallType("incoming", hasAnswer = false, hasDecline = false, hasHangUp = true) == "ongoing")
+        assertTrue(resolvedNotificationCallType("unknown", hasAnswer = true, hasDecline = false, hasHangUp = true) == "screening")
+        assertTrue(resolvedNotificationCallType("incoming", hasAnswer = false, hasDecline = false, hasHangUp = false) == "incoming")
+        assertTrue(resolvedNotificationCallType("ongoing", hasAnswer = true, hasDecline = true, hasHangUp = true) == "ongoing")
+    }
+
+    @Test fun ongoingCallPostsUseASettleDelayToSuppressTerminalSamsungUpdates() {
+        assertTrue(shouldDelayCallPost("ongoing"))
+        assertFalse(shouldDelayCallPost("incoming"))
+        assertFalse(shouldDelayCallPost(null))
+    }
 }

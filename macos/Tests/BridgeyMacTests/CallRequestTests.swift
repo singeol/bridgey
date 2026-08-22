@@ -15,4 +15,10 @@ final class CallRequestTests: XCTestCase {
         XCTAssertNil(normalizedPhoneNumber("7 +999 123"))
         XCTAssertNil(normalizedPhoneNumber("١٢٣٤٥"))
     }
+
+    func testColdLaunchCallWaitsForConnectionAndFeatureNegotiation() {
+        XCTAssertFalse(pendingPhoneCallCanDispatch(isConnected: false, featureStateReceived: false))
+        XCTAssertFalse(pendingPhoneCallCanDispatch(isConnected: true, featureStateReceived: false))
+        XCTAssertTrue(pendingPhoneCallCanDispatch(isConnected: true, featureStateReceived: true))
+    }
 }

@@ -1,5 +1,4 @@
 import AppKit
-import Carbon
 import Foundation
 
 func phoneNumberFromTelURL(_ value: String) -> String? {
@@ -10,34 +9,36 @@ func phoneNumberFromTelURL(_ value: String) -> String? {
     return normalizedPhoneNumber(decoded)
 }
 
-@MainActor
-final class PhoneURLHandler: NSObject {
-    private let onCall: (String) -> Void
+final class PendingPhoneCallRouter {
+    private var onCall: ((String) -> Void)?
+    private var pendingNumbers: [String] = []
 
-    init(onCall: @escaping (String) -> Void) {
+    func configure(onCall: @escaping (String) -> Void) {
         self.onCall = onCall
-        super.init()
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURL(_:withReplyEvent:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
+        let queued = pendingNumbers
+        pendingNumbers.removeAll()
+        queued.forEach(onCall)
     }
 
-    deinit {
-        NSAppleEventManager.shared().removeEventHandler(
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
+    func receive(_ value: String) {
+        guard let number = phoneNumberFromTelURL(value) else { return }
+        if let onCall {
+            onCall(number)
+        } else if pendingNumbers.count < 8 {
+            pendingNumbers.append(number)
+        }
+    }
+}
+
+@MainActor
+final class PhoneURLHandler: NSObject, NSApplicationDelegate {
+    private let router = PendingPhoneCallRouter()
+
+    func configure(onCall: @escaping (String) -> Void) {
+        router.configure(onCall: onCall)
     }
 
-    @objc private func handleGetURL(
-        _ event: NSAppleEventDescriptor,
-        withReplyEvent _: NSAppleEventDescriptor
-    ) {
-        guard let value = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let number = phoneNumberFromTelURL(value) else { return }
-        onCall(number)
+    func application(_: NSApplication, open urls: [URL]) {
+        urls.forEach { router.receive($0.absoluteString) }
     }
 }

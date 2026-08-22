@@ -3,12 +3,12 @@ import SwiftUI
 
 @main
 struct BridgeyApp: App {
+    @NSApplicationDelegateAdaptor(PhoneURLHandler.self) private var phoneURLHandler
     @StateObject private var discovery: BonjourDiscovery
     @StateObject private var pairing: PairingCoordinator
     @StateObject private var settings: BridgeySettings
     private let settingsWindow: SettingsWindowController
     private let callServiceProvider: CallServiceProvider
-    private let phoneURLHandler: PhoneURLHandler
 
     init() {
         LegacyPreferences.migrateIfNeeded()
@@ -19,11 +19,11 @@ struct BridgeyApp: App {
         let pairing = PairingCoordinator(deviceID: discovery.localDeviceID, deviceName: discovery.localDeviceName, settings: settings)
         pairing.observe(discovery)
         _pairing = StateObject(wrappedValue: pairing)
-        let callServiceProvider = CallServiceProvider { [weak pairing] number in pairing?.sendCall(number) }
+        let callServiceProvider = CallServiceProvider { [weak pairing] number in pairing?.sendCallWhenConnected(number) }
         self.callServiceProvider = callServiceProvider
         NSApplication.shared.servicesProvider = callServiceProvider
-        phoneURLHandler = PhoneURLHandler { [weak pairing] number in pairing?.sendCall(number) }
         settingsWindow = SettingsWindowController(discovery: discovery, pairing: pairing, settings: settings)
+        phoneURLHandler.configure { [weak pairing] number in pairing?.sendCallWhenConnected(number) }
     }
 
     var body: some Scene {

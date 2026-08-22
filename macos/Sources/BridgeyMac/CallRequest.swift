@@ -13,6 +13,10 @@ func normalizedPhoneNumber(_ value: String) -> String? {
     return (trimmed.first == "+" ? "+" : "") + digits
 }
 
+func pendingPhoneCallCanDispatch(isConnected: Bool, featureStateReceived: Bool) -> Bool {
+    isConnected && featureStateReceived
+}
+
 @MainActor
 final class CallServiceProvider: NSObject {
     private let onCall: (String) -> Void
