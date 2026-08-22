@@ -62,7 +62,7 @@ class ForwardedNotificationRegistryTest {
     @Test fun mapsPlatformPhoneStateWithoutReadingCallHistory() {
         assertTrue(telephonyCallType(TelephonyManager.CALL_STATE_RINGING) == "incoming")
         assertTrue(telephonyCallType(TelephonyManager.CALL_STATE_OFFHOOK) == "ongoing")
-        assertTrue(telephonyCallType(TelephonyManager.CALL_STATE_IDLE) == null)
+        assertTrue(telephonyCallType(TelephonyManager.CALL_STATE_IDLE) == "idle")
     }
 
     @Test fun exposesRequiredCallStyleActionsWhenPhoneAppDoesNotPublishRegularActions() {

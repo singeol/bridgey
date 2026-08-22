@@ -87,10 +87,15 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
         if (!bridgey.settings.isNotificationApplicationEnabled(sbn.packageName)) return
         val applicationIcon = applicationIcon(sbn.packageName)
 
+        val telephonyCallType = if (isCall) currentTelephonyCallType() else null
+        if (telephonyCallType == "idle") {
+            removeForwardedCall(sbn.key)
+            return
+        }
         val notificationId = notificationToken(sbn.key)
         forwardedNotifications.record(notificationId, sbn.key, sbn.packageName)
         pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
-        val callType = if (isCall) resolvedNotificationCallType(notification, currentTelephonyCallType()) else null
+        val callType = if (isCall) resolvedNotificationCallType(notification, telephonyCallType) else null
         val actions = storeActions(
             notificationId,
             notificationActionCandidates(notification, callType, canControlSystemCalls()),
@@ -291,20 +296,22 @@ class BridgeyNotificationListenerService : NotificationListenerService() {
     }
 
     private fun removeActiveForwardedCalls() {
-        val bridgey = application as BridgeyApplication
         activeNotifications.orEmpty()
             .filter { it.packageName != packageName && it.notification.category == Notification.CATEGORY_CALL }
-            .forEach { sbn ->
-                val notificationId = forwardedNotifications.removeSystemKey(sbn.key) ?: return@forEach
-                pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
-                removeActions(notificationId)
-                if (
-                    forwardedNotificationIds.remove(notificationId) &&
-                    bridgey.isPrimaryUser && bridgey.isBridgeyEnabled
-                ) {
-                    bridgey.pairing.sendNotificationRemoved(notificationId)
-                }
-            }
+            .forEach { removeForwardedCall(it.key) }
+    }
+
+    private fun removeForwardedCall(systemKey: String) {
+        val notificationId = forwardedNotifications.removeSystemKey(systemKey) ?: return
+        pendingCallPosts.remove(notificationId)?.let(mainHandler::removeCallbacks)
+        removeActions(notificationId)
+        val bridgey = application as BridgeyApplication
+        if (
+            forwardedNotificationIds.remove(notificationId) &&
+            bridgey.isPrimaryUser && bridgey.isBridgeyEnabled
+        ) {
+            bridgey.pairing.sendNotificationRemoved(notificationId)
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.S)
@@ -543,6 +550,7 @@ internal fun notificationCallType(value: Int): String = when (value) {
 internal fun telephonyCallType(value: Int): String? = when (value) {
     TelephonyManager.CALL_STATE_RINGING -> "incoming"
     TelephonyManager.CALL_STATE_OFFHOOK -> "ongoing"
+    TelephonyManager.CALL_STATE_IDLE -> "idle"
     else -> null
 }
 
