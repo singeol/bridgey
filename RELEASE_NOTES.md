@@ -1,21 +1,22 @@
-# Bridgey v0.5.0-alpha.7
+# Bridgey v0.5.0-alpha.8
 
-This seventh Bridgey v0.5 preview fixes mirrored incoming-call controls and
-keeps the call state on macOS synchronized with Android.
+This eighth Bridgey v0.5 preview improves Samsung call-state handling and makes
+browser phone links reliable during a cold Bridgey launch or reconnect.
 
-## Changes since alpha.6
+## Changes since alpha.7
 
-- Incoming Android calls now expose **Answer** and **Decline** on macOS even
-  when the phone app keeps the required `CallStyle` actions outside the regular
-  notification action list.
-- Accepted calls transition to **Call in progress** with the appropriate
-  **Hang Up** action instead of retaining a stale **Incoming call** label.
-- Ending a call, disabling notification forwarding, disconnecting, or replacing
-  the active call now removes its stale macOS notification and menu-bar card.
-- Outbound call-request messages such as **Android rejected the call request**
-  are cleared when an actual call arrives and otherwise expire automatically.
-- Added Android and macOS regression coverage for required call actions and
-  incoming-to-ongoing state changes.
+- Call state is derived from the actual Android `CallStyle` answer, decline,
+  and hang-up intents instead of trusting an inconsistent OEM call-type value.
+- Short terminal `ongoing` updates emitted by Samsung while a call is ending
+  are settled before forwarding, preventing a false **Call in progress** banner.
+- `tel:` URLs are now received by the early macOS application delegate, so a
+  phone number is retained when the browser launches Bridgey from a stopped state.
+- Browser and macOS Services call requests wait up to 30 seconds for the secure
+  Android connection and feature negotiation instead of failing during startup.
+- Pending call requests are bounded, expire safely, and are cleared when Bridgey
+  or the Calls feature is turned off.
+- Added regression coverage for Samsung call-state conflicts, terminal call
+  updates, cold-launch URL queuing, and reconnect dispatch readiness.
 
 ## Downloads
 
