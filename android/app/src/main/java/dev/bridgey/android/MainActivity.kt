@@ -106,8 +106,9 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshPermissionState()
     }
-    private val callPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        bridgeySettings.setDirectCallsEnabled(granted)
+    private val callPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        bridgeySettings.setDirectCallsEnabled(hasCallIntegrationPermissions())
+        BridgeyNotificationListenerService.callPermissionsChanged()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -201,9 +202,10 @@ class MainActivity : ComponentActivity() {
         notificationAccessEnabled = NotificationAccess.isEnabled(this)
         if (
             ::bridgeySettings.isInitialized && bridgeySettings.state.value.directCallsEnabled &&
-            checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED
+            !hasCallIntegrationPermissions()
         ) {
             bridgeySettings.setDirectCallsEnabled(false)
+            BridgeyNotificationListenerService.callPermissionsChanged()
         }
     }
 
@@ -222,12 +224,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestDirectCalls() {
-        if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+        if (hasCallIntegrationPermissions()) {
             bridgeySettings.setDirectCallsEnabled(true)
+            BridgeyNotificationListenerService.callPermissionsChanged()
         } else {
-            callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+            callPermissionLauncher.launch(CALL_INTEGRATION_PERMISSIONS)
         }
     }
+
+    private fun hasCallIntegrationPermissions(): Boolean =
+        CALL_INTEGRATION_PERMISSIONS.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun openAppNotificationSettings() {
         startActivity(
@@ -345,7 +351,10 @@ private fun BridgeyApp(
                 onGlobalFeatureChanged = { feature, enabled ->
                     settings.setGlobal(feature, enabled)
                     if (feature == BridgeyFeature.FIND_DEVICE && !enabled) pairing.stopFinding()
-                    if (feature == BridgeyFeature.CALLS && !enabled) settings.setDirectCallsEnabled(false)
+                    if (feature == BridgeyFeature.CALLS && !enabled) {
+                        settings.setDirectCallsEnabled(false)
+                        BridgeyNotificationListenerService.callPermissionsChanged()
+                    }
                 },
                 onDeviceFeatureChanged = { deviceId, feature, enabled ->
                     settings.setForDevice(deviceId, feature, enabled)
@@ -360,7 +369,10 @@ private fun BridgeyApp(
                 },
                 onDirectCallsChanged = { enabled ->
                     if (enabled) permissionPrompt = PermissionPrompt.DirectCalls
-                    else settings.setDirectCallsEnabled(false)
+                    else {
+                        settings.setDirectCallsEnabled(false)
+                        BridgeyNotificationListenerService.callPermissionsChanged()
+                    }
                 },
                 onForget = pairing::forget,
                 onExportDiagnostics = onExportDiagnostics,
@@ -440,7 +452,7 @@ private fun BridgeyApp(
                 Text(
                     when {
                         isForwarding -> "Forward Android notifications?"
-                        isDirectCalls -> "Allow direct calls from Mac?"
+                        isDirectCalls -> "Allow call status and controls?"
                         else -> "Allow Bridgey notifications?"
                     },
                 )
@@ -449,7 +461,7 @@ private fun BridgeyApp(
                 Text(
                     when {
                         isForwarding -> "This optional access lets Bridgey read notification titles and text and send them only to your paired Mac over the encrypted local connection."
-                        isDirectCalls -> "This optional Phone permission lets an authenticated paired Mac start a call immediately. Leave it off to receive a notification that opens the Android dialer for confirmation."
+                        isDirectCalls -> "These optional Phone permissions let an authenticated paired Mac start calls, distinguish ringing from active calls, and answer, decline, or hang up. Bridgey does not read contacts or call history."
                         else -> "Bridgey uses notifications to keep the connection visible and show file transfers, received files, and Find Device. It does not use notifications for advertising."
                     },
                 )
@@ -577,9 +589,9 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("Start calls without confirmation", fontWeight = FontWeight.Medium)
+                            Text("Call status and controls", fontWeight = FontWeight.Medium)
                             Text(
-                                "Optional. When off, Mac call requests open the Android dialer from a notification.",
+                                "Allows your paired Mac to start, identify, answer, decline, and end cellular calls.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -675,6 +687,12 @@ private fun SettingsScreen(
         item { Spacer(Modifier.height(12.dp)) }
     }
 }
+
+private val CALL_INTEGRATION_PERMISSIONS = arrayOf(
+    Manifest.permission.CALL_PHONE,
+    Manifest.permission.READ_PHONE_STATE,
+    Manifest.permission.ANSWER_PHONE_CALLS,
+)
 
 @Composable
 private fun FeatureToggle(title: String, enabled: Boolean, onChanged: (Boolean) -> Unit) {

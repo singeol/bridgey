@@ -195,9 +195,12 @@ To call from macOS, copy a phone number and press **Call** in Bridgey or
 `Control-Option-P`. In applications that expose macOS Services, select a phone
 number and choose **Services → Call with Bridgey**. Android uses confirmation
 mode by default: tap the call-request notification to review the number in the
-system dialer. An explicit Android Settings switch enables direct calls and
-requests the `CALL_PHONE` permission; emergency numbers are never dialled
-directly by Bridgey.
+system dialer. An explicit Android Settings switch enables call status and
+controls. It asks for `CALL_PHONE`, `READ_PHONE_STATE`, and
+`ANSWER_PHONE_CALLS` so Bridgey can start a validated call, distinguish
+ringing from an active call, and answer, decline, or hang up from the paired
+Mac. It does not request contacts or call history, and emergency numbers are
+never dialled directly by Bridgey.
 
 Bridgey can also handle `tel:` links from browsers. In macOS Settings, press
 **Use Bridgey for phone links** once; this explicit action makes Bridgey the

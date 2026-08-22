@@ -245,9 +245,13 @@ Android answers with the same message ID using `calls.started`,
 `calls.confirmation_required`, or `calls.rejected`. Confirmation mode is the
 default and posts a local notification whose explicit action opens the system
 dialer with `ACTION_DIAL`. Direct mode is a separate local opt-in that requires
-`CALL_PHONE`; it uses the platform telecom service and never starts a number the
-platform identifies as an emergency number. Local feature policy is checked
-again immediately before either side effect. Number content is not logged.
+`CALL_PHONE`; the same local call-integration opt-in requests
+`READ_PHONE_STATE` and `ANSWER_PHONE_CALLS` to identify call state and execute
+Answer, Decline, and Hang Up commands sent through authenticated notification
+action tokens. Bridgey uses the platform telecom service and never starts a
+number the platform identifies as an emergency number. It does not request
+contacts or call-log access. Local feature policy is checked again immediately
+before any side effect. Number content is not logged.
 
 ## Compatibility
 

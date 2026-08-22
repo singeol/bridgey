@@ -21,6 +21,8 @@ class ManifestPermissionsTest {
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
                 "android.permission.CALL_PHONE",
+                "android.permission.READ_PHONE_STATE",
+                "android.permission.ANSWER_PHONE_CALLS",
             ),
             declared,
         )

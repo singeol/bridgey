@@ -12,15 +12,19 @@ Bridgey v0.5 does not declare `READ_SMS`, `SEND_SMS`, `READ_CALL_LOG`,
 - A reply is available only when the source notification provides a bounded
   free-form `RemoteInput`; Bridgey returns that reply to the retained action
   token and cannot address an arbitrary recipient.
-- `CATEGORY_CALL` notifications are forwarded even when marked ongoing. The
-  Mac shows their declared call type and only the action tokens supplied by the
-  phone application. Availability and labels therefore vary by phone/OEM.
+- `CATEGORY_CALL` notifications are forwarded even when marked ongoing. When
+  the optional call integration is enabled, Bridgey uses `READ_PHONE_STATE`
+  only to distinguish ringing, active, and ended states and uses
+  `ANSWER_PHONE_CALLS` for Answer, Decline, and Hang Up. It does not request
+  contacts or call-log access. Without this opt-in, controls remain limited to
+  the actions exposed by the phone application and may vary by phone/OEM.
 - Bridgey does not read the SMS database or call log and does not make itself
   the default SMS or Phone application.
 - A Mac may send a validated phone number to Android. The default path uses
   `ACTION_DIAL` and requires confirmation on the phone. Users may separately
-  opt in to direct calling, which is the only path that requests `CALL_PHONE`.
-  Bridgey blocks direct handling of platform-recognized emergency numbers.
+  opt in to call status and controls, which requests `CALL_PHONE`,
+  `READ_PHONE_STATE`, and `ANSWER_PHONE_CALLS`. Bridgey blocks direct handling
+  of platform-recognized emergency numbers.
 
 This keeps the feature useful without adding broad access to unrelated message
 history or telephony metadata.

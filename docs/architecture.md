@@ -109,13 +109,17 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   history is off by default, retains at most 200 items for seven days, and is
   stored with owner-only permissions. Ongoing `CATEGORY_CALL` notifications are
   the sole exception to the ongoing-notification filter: their bounded call
-  type and existing action tokens drive a temporary macOS call card. Bridgey
-  never invents a reject, answer, or mute operation.
+  type drives a temporary macOS call card. With the separate call-integration
+  opt-in, Android's telephony state corrects ambiguous OEM notification state
+  and authenticated action tokens invoke the platform Answer, Decline, and
+  Hang Up operations. Without it, Bridgey forwards only actions supplied by
+  the phone application.
 - **Calls from Mac:** macOS sends only a strictly validated number over the
   authenticated encrypted session. Android defaults to a notification that
-  opens the system dialer for user confirmation. Immediate calling is a
-  separate opt-in backed by the runtime Phone permission; emergency numbers
-  never use the immediate path.
+  opens the system dialer for user confirmation. Call status and controls are
+  a separate opt-in backed by narrow runtime Phone permissions; Bridgey does
+  not request contacts or call-log access, and emergency numbers never use the
+  immediate path.
 
 ## Platform lifecycle
 
