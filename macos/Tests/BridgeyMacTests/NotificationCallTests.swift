@@ -23,4 +23,16 @@ final class NotificationCallTests: XCTestCase {
         XCTAssertEqual(remoteCallDetail("Call in progress", type: "ongoing"), "")
         XCTAssertEqual(remoteCallDetail("  Verified caller  ", type: "incoming"), "Verified caller")
     }
+
+    func testCallOverlayReplacesOnlySystemCallNotifications() {
+        XCTAssertTrue(shouldUseSystemNotification(callType: nil))
+        XCTAssertFalse(shouldUseSystemNotification(callType: "incoming"))
+        XCTAssertFalse(shouldUseSystemNotification(callType: "ongoing"))
+    }
+
+    func testCallOverlayPlacesAnswerBeforeDecline() {
+        let decline = RemoteCallAction(id: "decline", title: "Decline")
+        let answer = RemoteCallAction(id: "answer", title: "Answer")
+        XCTAssertEqual(orderedCallActions([decline, answer]), [answer, decline])
+    }
 }

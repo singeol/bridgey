@@ -215,6 +215,9 @@ final class PairingCoordinator: ObservableObject {
     private var filePreparationCancellation: FileCancellationToken?
     private var fileTransferWindow: FileTransferWindowController?
     private var fileDropWindow: FileDropWindowController?
+    private lazy var callOverlayWindow = CallOverlayWindowController(pairing: self)
+    private var hiddenCallOverlayIdentity: String?
+    private var audibleCallIdentity: String?
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
     private let diagnostics = BridgeyDiagnostics()
@@ -1174,7 +1177,9 @@ final class PairingCoordinator: ObservableObject {
                 }
                 recordNotificationHistory(payload, deviceID: current.remoteDeviceID)
                 updateRemoteCall(payload, deviceID: current.remoteDeviceID)
-                postNotification(payload, deviceID: current.remoteDeviceID)
+                if shouldUseSystemNotification(callType: payload.callType) {
+                    postNotification(payload, deviceID: current.remoteDeviceID)
+                }
             case "notifications.remove":
                 guard featureEnabled(.notifications, current: current),
                       let reference = try receiveNotificationReference(message, in: current) else { return }
@@ -1585,8 +1590,16 @@ final class PairingCoordinator: ObservableObject {
         )
     }
 
+    func hideCallOverlay() {
+        if let call = remoteCall {
+            hiddenCallOverlayIdentity = callOverlayIdentity(call.notificationID, deviceID: call.deviceID)
+        }
+        callOverlayWindow.hide()
+    }
+
     private func updateRemoteCall(_ payload: RemoteNotificationPayload, deviceID: String) {
         guard let callType = normalizedRemoteCallType(payload.callType) else { return }
+        let identity = callOverlayIdentity(payload.notificationId, deviceID: deviceID)
         if let existing = remoteCall,
            existing.notificationID != payload.notificationId || existing.deviceID != deviceID {
             clearRemoteCall()
@@ -1604,6 +1617,13 @@ final class PairingCoordinator: ObservableObject {
             type: callType,
             actions: actions
         )
+        if hiddenCallOverlayIdentity != identity {
+            callOverlayWindow.show()
+        }
+        if callType == "incoming", audibleCallIdentity != identity {
+            NSSound.beep()
+            audibleCallIdentity = identity
+        }
     }
 
     func clearNotificationHistory() {
@@ -1752,6 +1772,9 @@ final class PairingCoordinator: ObservableObject {
     private func removeRemoteNotification(_ notificationID: String, deviceID: String) {
         if remoteCall?.notificationID == notificationID && remoteCall?.deviceID == deviceID {
             remoteCall = nil
+            callOverlayWindow.hide()
+            hiddenCallOverlayIdentity = nil
+            audibleCallIdentity = nil
         }
         let identifier = remoteNotificationRequestIdentifier(deviceID: deviceID, notificationID: notificationID)
         let center = UNUserNotificationCenter.current()
@@ -1763,6 +1786,9 @@ final class PairingCoordinator: ObservableObject {
     private func clearRemoteCall() {
         guard let call = remoteCall else { return }
         remoteCall = nil
+        callOverlayWindow.hide()
+        hiddenCallOverlayIdentity = nil
+        audibleCallIdentity = nil
         let identifier = remoteNotificationRequestIdentifier(
             deviceID: call.deviceID,
             notificationID: call.notificationID
@@ -1770,6 +1796,10 @@ final class PairingCoordinator: ObservableObject {
         let center = UNUserNotificationCenter.current()
         center.removeDeliveredNotifications(withIdentifiers: [identifier])
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
+    }
+
+    private func callOverlayIdentity(_ notificationID: String, deviceID: String) -> String {
+        "\(deviceID)\u{0}\(notificationID)"
     }
 
     private func saveTrust(_ current: Session) {

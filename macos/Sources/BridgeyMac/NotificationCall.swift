@@ -23,3 +23,7 @@ func remoteCallDetail(_ detail: String, type: String?) -> String {
     ]
     return genericCallDescriptions.contains(trimmed.lowercased()) ? "" : trimmed
 }
+
+func shouldUseSystemNotification(callType: String?) -> Bool {
+    callType == nil
+}

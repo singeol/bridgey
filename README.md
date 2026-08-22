@@ -65,7 +65,7 @@ The roadmap describes intended direction rather than fixed release dates.
 - [x] Support notification action buttons and inline replies when Android exposes them
 - [x] Add per-application notification filters and a private local history
 - [x] Research SMS viewing/replies and document the permission-safe notification-action scope
-- [x] Show call state and expose only the actions supplied by the Android phone application
+- [x] Show live call state with explicit Answer, Decline, and Hang Up controls
 - [x] Start a validated phone call from selected macOS text or the clipboard
 
 ### v0.6 — remote interaction
@@ -166,9 +166,12 @@ Bridgey asks for access only when the related feature needs it:
   received files, and Find Device controls remain visible.
 - Android notification access is optional and is used only to forward a
   notification's application name, title, and text to the paired Mac.
-- Android Phone access is optional and is requested only if the user enables
-  calls without confirmation. Without it, a request from Mac opens the system
-  dialer through an Android notification and still requires phone confirmation.
+- Android Phone access is optional and requested only when the user enables
+  call status and controls. `CALL_PHONE` starts validated calls,
+  `READ_PHONE_STATE` distinguishes ringing from active calls, and
+  `ANSWER_PHONE_CALLS` enables Answer, Decline, and Hang Up. Bridgey does not
+  request contacts or call-log access. Without this opt-in, a request from Mac
+  opens the system dialer through an Android notification for confirmation.
 - macOS local-network access is required for Bonjour discovery and direct
   encrypted connections to Android devices.
 - macOS notifications are optional and are requested only when the user enables
@@ -206,6 +209,11 @@ Bridgey can also handle `tel:` links from browsers. In macOS Settings, press
 **Use Bridgey for phone links** once; this explicit action makes Bridgey the
 default phone-link handler. Browsers still show their external-application
 confirmation before opening Bridgey and sending the validated number.
+
+Incoming and active calls appear in a compact floating macOS call panel with
+explicit controls. It stays available across Spaces without activating Bridgey
+or taking focus from the current app; hiding it leaves the same controls in the
+Bridgey menu-bar panel.
 
 Connected devices exchange their effective feature state over the encrypted
 session. A feature is available only when both devices enable it, so controls

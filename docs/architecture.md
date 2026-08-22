@@ -120,6 +120,10 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   a separate opt-in backed by narrow runtime Phone permissions; Bridgey does
   not request contacts or call-log access, and emergency numbers never use the
   immediate path.
+- **macOS call presentation:** call notifications use a compact non-activating
+  floating panel so Answer, Decline, and Hang Up remain directly visible rather
+  than being collapsed into the system notification action menu. Ordinary
+  mirrored notifications continue to use `UserNotifications`.
 
 ## Platform lifecycle
 
