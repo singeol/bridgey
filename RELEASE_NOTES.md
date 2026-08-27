@@ -1,40 +1,33 @@
-# Bridgey v0.5.0-alpha.10
+# Bridgey v0.5.0-alpha.11
 
-This final Bridgey v0.5 preview completes reliable cellular call status and
-controls between Android and macOS and adds a focused native call experience on
-the Mac.
+This Bridgey preview introduces a unified visual identity for Android, macOS,
+and the web, and publishes the project's first public website and documentation.
 
-## Changes since alpha.9
+## Changes since alpha.10
 
-- Android now uses the platform telephony state to distinguish ringing,
-  active/outgoing, and ended calls when an OEM dialer publishes ambiguous call
-  notifications.
-- Added real Answer, Decline, and Hang Up controls through Android's protected
-  telecom APIs. The optional call-integration switch requests only
-  `CALL_PHONE`, `READ_PHONE_STATE`, and `ANSWER_PHONE_CALLS`; Bridgey still does
-  not request contacts or call-log access.
-- Incoming calls show Answer on the left in green and Decline on the right in
-  red in a compact non-activating macOS panel. Active and outgoing calls show a
-  full-width red Hang Up control.
-- The call panel stays above normal windows and across Spaces without taking
-  focus, sounds once for a new incoming call, can be hidden for the current
-  call, and disappears automatically when the call ends.
-- Suppressed late Samsung dialer updates after the phone returns to idle, which
-  previously could briefly recreate an incorrect incoming-call card.
-- Updated Gradle Wrapper to 9.7.1 and kotlinx-coroutines to 1.11.0 after clean
-  Build, CodeQL, and dependency-review checks.
-- Expanded call-state, action-ordering, permission, and OEM regression tests and
-  updated the privacy and protocol documentation.
+- Replaced the Android and macOS application icons with the new Bridgey `B`
+  mark in a shared navy, cyan, and blue visual style.
+- Added matching Android adaptive and monochrome icons so the mark remains
+  recognizable with themed launcher icons and in system notifications.
+- Added the Bridgey website and documentation at
+  [bridgey.ai](https://bridgey.ai/), deployed automatically with GitHub Pages.
+- Added search metadata, canonical URLs, Open Graph and Twitter cards,
+  structured data, `robots.txt`, and a sitemap for search-engine indexing.
+- Expanded the public roadmap from v0.6 through v1.0, including media controls,
+  remote input, presentation controls, Files 2.0, multiple devices, bounded
+  automation, experimental screen sharing, and the stable-release criteria.
+- Documented additional post-1.0 ideas that extend beyond KDE Connect while
+  retaining Bridgey's local-first and permission-minimizing design.
 
 ## Test focus
 
-- Incoming call: Answer and Decline, transition to Call in progress, Hang Up,
-  and automatic dismissal.
-- Outgoing call from clipboard, macOS Services, and a browser `tel:` link.
-- Notification buttons, inline reply, dismissal synchronization, application
-  filters, and private local history.
-- Reconnect after restarting either client, followed by clipboard, file,
-  Find Device, and battery smoke tests.
+- Confirm the new `B` icon on the Android launcher, Android notifications,
+  the macOS app, menu-bar notifications, and the mounted DMG.
+- Upgrade over alpha.10 and confirm that pairing and trusted-device settings
+  are retained.
+- Smoke-test reconnect, clipboard sharing, file transfer, notification actions,
+  Find Device, battery status, and call controls in both directions.
+- Open the website and documentation on desktop and mobile browsers.
 
 ## Downloads
 
@@ -51,5 +44,7 @@ the Mac.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
   credentials are configured.
+- A newly configured custom domain can require DNS propagation and certificate
+  issuance before GitHub Pages can enforce HTTPS.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).
