@@ -5,6 +5,9 @@
 [![Latest release](https://img.shields.io/github/v/release/singeol/bridgey)](https://github.com/singeol/bridgey/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/singeol/bridgey)](LICENSE)
 
+[Website and documentation](https://bridgey.ai/) ·
+[Download the latest release](https://github.com/singeol/bridgey/releases/latest)
+
 Bridgey is an open-source, local-first bridge between Android and macOS. It aims
 to provide a small, native and extensible subset of Apple Continuity and KDE
 Connect without accounts, telemetry, or a mandatory cloud service. A Linux

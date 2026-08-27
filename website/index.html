@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Bridgey is an open-source, local-first bridge between Android and macOS.">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+  <meta name="theme-color" content="#06164f">
+  <title>Bridgey — Android and Mac, connected privately</title>
+  <link rel="canonical" href="https://bridgey.ai/">
+  <link rel="icon" href="assets/bridgey-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Bridgey">
+  <meta property="og:title" content="Bridgey — Android and Mac, connected privately">
+  <meta property="og:description" content="Open-source local-first clipboard, file, notification, battery, Find Device, and call integration for Android and macOS.">
+  <meta property="og:url" content="https://bridgey.ai/">
+  <meta property="og:image" content="https://bridgey.ai/assets/bridgey-icon.png">
+  <meta property="og:image:alt" content="Bridgey app icon">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Bridgey — Android and Mac, connected privately">
+  <meta name="twitter:description" content="An open-source, local-first bridge between Android and macOS.">
+  <meta name="twitter:image" content="https://bridgey.ai/assets/bridgey-icon.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://bridgey.ai/#application",
+        "name": "Bridgey",
+        "url": "https://bridgey.ai/",
+        "description": "An open-source, local-first bridge between Android and macOS.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Android 8.0 or later; macOS 13 or later",
+        "downloadUrl": "https://github.com/singeol/bridgey/releases/latest",
+        "softwareVersion": "0.5 alpha",
+        "license": "https://github.com/singeol/bridgey/blob/main/LICENSE",
+        "isAccessibleForFree": true,
+        "image": "https://bridgey.ai/assets/bridgey-icon.png",
+        "codeRepository": "https://github.com/singeol/bridgey"
+      },
+      {
+        "@type": "SoftwareSourceCode",
+        "@id": "https://bridgey.ai/#source",
+        "name": "Bridgey source code",
+        "codeRepository": "https://github.com/singeol/bridgey",
+        "license": "https://github.com/singeol/bridgey/blob/main/LICENSE",
+        "programmingLanguage": ["Kotlin", "Swift"],
+        "runtimePlatform": ["Android", "macOS"]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Bridgey home">
+      <img src="assets/bridgey-icon.png" alt="" width="42" height="42">
+      <span>Bridgey</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="#features">Features</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="docs/">Docs</a>
+    </nav>
+    <a class="button button-small" href="https://github.com/singeol/bridgey/releases/latest">Download</a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> Open-source · local-first · v0.5 alpha</p>
+        <h1>Your Android and Mac,<br><span>on speaking terms.</span></h1>
+        <p class="hero-lead">Share clipboard content and files, mirror actionable notifications,
+          check battery state, find either device, and control phone calls — directly over your local network.</p>
+        <div class="hero-actions">
+          <a class="button" href="https://github.com/singeol/bridgey/releases/latest">Get the latest build</a>
+          <a class="text-link" href="https://github.com/singeol/bridgey">View source <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="platform-note">Android 8.0+ · macOS 13+ · No account required</p>
+      </div>
+      <div class="hero-art" aria-label="A phone and Mac connected securely through Bridgey">
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="device phone"><span></span></div>
+        <div class="connection"><i></i><i></i><i></i></div>
+        <div class="device mac"><span></span></div>
+        <img src="assets/bridgey-icon.png" alt="Bridgey icon" width="112" height="112">
+      </div>
+    </section>
+
+    <section class="trust-strip" aria-label="Core properties">
+      <span>Encrypted pairing</span><span>Local network</span><span>No telemetry</span><span>MIT licensed</span>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-heading">
+        <p class="eyebrow">Available today</p>
+        <h2>The useful parts are already here.</h2>
+        <p>Bridgey is deliberately native on both platforms and keeps every capability independently controllable.</p>
+      </div>
+      <div class="feature-grid">
+        <article><span class="feature-number">01</span><h3>Clipboard</h3><p>Send plain text and rich HTML with explicit delivery acknowledgement and safe payload limits.</p></article>
+        <article><span class="feature-number">02</span><h3>File transfer</h3><p>Stream files in either direction with progress, cancellation, integrity checks, and partial-file cleanup.</p></article>
+        <article><span class="feature-number">03</span><h3>Notifications</h3><p>Mirror Android notifications to macOS, run exposed actions, reply inline, and keep dismissal state synchronized.</p></article>
+        <article><span class="feature-number">04</span><h3>Calls</h3><p>Start a validated number from the Mac and use visible Answer, Decline, and Hang Up controls.</p></article>
+        <article><span class="feature-number">05</span><h3>Battery</h3><p>See the connected Android device's charge and charging state without reaching for the phone.</p></article>
+        <article><span class="feature-number">06</span><h3>Find Device</h3><p>Ring either device from the other, with an explicit local stop action and synchronized state.</p></article>
+      </div>
+    </section>
+
+    <section class="section split" id="privacy">
+      <div>
+        <p class="eyebrow">Private by design</p>
+        <h2>Your devices talk to each other — not to us.</h2>
+      </div>
+      <div class="privacy-list">
+        <div><strong>01</strong><p><b>No account or cloud dependency.</b> Discovery and transport stay on the local network.</p></div>
+        <div><strong>02</strong><p><b>Mutual confirmation.</b> Both devices verify the same six-digit pairing code before trust is stored.</p></div>
+        <div><strong>03</strong><p><b>Per-device permissions.</b> Clipboard, files, notifications, battery, Find Device, and calls can be disabled separately.</p></div>
+        <div><strong>04</strong><p><b>Scoped access.</b> Bridgey does not request contacts, SMS history, full storage, screen recording, or Accessibility for its current feature set.</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="roadmap">
+      <div class="section-heading">
+        <p class="eyebrow">Road to 1.0</p>
+        <h2>Useful milestones, not a feature pile.</h2>
+      </div>
+      <div class="roadmap-grid">
+        <article><span>0.6</span><h3>Media & quick actions</h3><p>Playback controls, link handoff, Ping, Mac battery, tiles, and shortcuts.</p></article>
+        <article><span>0.7</span><h3>Remote input</h3><p>Opt-in touchpad, keyboard, presentation controls, and visible session safety.</p></article>
+        <article><span>0.8</span><h3>Files 2.0</h3><p>Folders, resumable transfers, scoped browsing, queues, and multiple devices.</p></article>
+        <article><span>0.9</span><h3>Automation</h3><p>Local allowlisted actions plus carefully isolated screen-sharing and SMS experiments.</p></article>
+        <article><span>1.0</span><h3>Stable companion</h3><p>A frozen protocol, migrations, stress testing, security review, and complete documentation.</p></article>
+      </div>
+      <a class="text-link" href="https://github.com/singeol/bridgey#roadmap">Read the detailed roadmap <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section class="section" id="docs">
+      <div class="section-heading">
+        <p class="eyebrow">Documentation</p>
+        <h2>Understand it, build it, verify it.</h2>
+      </div>
+      <div class="docs-grid">
+        <a href="docs/"><span>Start here</span><h3>Install and connect</h3><p>Install both apps, pair your devices, and learn the everyday Bridgey workflows.</p><i>→</i></a>
+        <a href="https://github.com/singeol/bridgey/blob/main/docs/architecture.md"><span>Design</span><h3>Architecture</h3><p>Discovery, trust, transport, plugin boundaries, and lifecycle decisions.</p><i>↗</i></a>
+        <a href="https://github.com/singeol/bridgey/blob/main/docs/protocol.md"><span>Wire format</span><h3>Protocol</h3><p>Versioned envelopes, capabilities, encrypted payloads, and transfer semantics.</p><i>↗</i></a>
+        <a href="https://github.com/singeol/bridgey/blob/main/SECURITY.md"><span>Threat model</span><h3>Security</h3><p>Pairing guarantees, key storage, trust boundaries, and vulnerability reporting.</p><i>↗</i></a>
+        <a href="docs/#troubleshooting"><span>Support</span><h3>Troubleshooting</h3><p>Discovery, reconnection, notifications, calls, permissions, and diagnostics.</p><i>→</i></a>
+        <a href="docs/#build"><span>Contributors</span><h3>Build from source</h3><p>Android and macOS requirements, commands, tests, and deeper technical references.</p><i>→</i></a>
+      </div>
+    </section>
+
+    <section class="cta">
+      <img src="assets/bridgey-icon.png" alt="" width="76" height="76">
+      <div><p class="eyebrow">Ready to try it?</p><h2>Keep the bridge local.</h2></div>
+      <a class="button button-light" href="https://github.com/singeol/bridgey/releases/latest">Download Bridgey</a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="brand"><img src="assets/bridgey-icon.png" alt="" width="34" height="34"><span>Bridgey</span></div>
+    <p>Open source under the MIT License. Built with Codex as an AI coding collaborator.</p>
+    <a href="https://github.com/singeol/bridgey">GitHub ↗</a>
+  </footer>
+</body>
+</html>

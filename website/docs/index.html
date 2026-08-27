@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Install, connect, use, and troubleshoot Bridgey on Android and macOS.">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+  <meta name="theme-color" content="#06164f">
+  <title>Bridgey Documentation</title>
+  <link rel="canonical" href="https://bridgey.ai/docs/">
+  <link rel="icon" href="../assets/bridgey-icon.png">
+  <link rel="stylesheet" href="../styles.css">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Bridgey">
+  <meta property="og:title" content="Bridgey Documentation — Install, Pair and Troubleshoot">
+  <meta property="og:description" content="Install Bridgey, pair Android with macOS, use every feature, review permissions, and solve common connection problems.">
+  <meta property="og:url" content="https://bridgey.ai/docs/">
+  <meta property="og:image" content="https://bridgey.ai/assets/bridgey-icon.png">
+  <meta property="og:image:alt" content="Bridgey app icon">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "Bridgey Documentation",
+    "description": "Install, connect, use, and troubleshoot Bridgey on Android and macOS.",
+    "url": "https://bridgey.ai/docs/",
+    "isPartOf": { "@id": "https://bridgey.ai/#application" },
+    "about": { "@id": "https://bridgey.ai/#application" },
+    "inLanguage": "en"
+  }
+  </script>
+</head>
+<body class="docs-page">
+  <a class="skip-link" href="#docs-content">Skip to documentation</a>
+  <header class="site-header docs-header">
+    <a class="brand" href="../" aria-label="Bridgey home">
+      <img src="../assets/bridgey-icon.png" alt="" width="42" height="42">
+      <span>Bridgey</span>
+    </a>
+    <span class="docs-label">Documentation</span>
+    <nav aria-label="Documentation navigation">
+      <a href="../">Overview</a>
+      <a href="https://github.com/singeol/bridgey">GitHub</a>
+    </nav>
+    <a class="button button-small" href="https://github.com/singeol/bridgey/releases/latest">Download</a>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" aria-label="On this page">
+      <p>Get started</p>
+      <a href="#overview">Overview</a>
+      <a href="#install">Install</a>
+      <a href="#pair">Pair devices</a>
+      <p>Use Bridgey</p>
+      <a href="#clipboard">Clipboard</a>
+      <a href="#files">Files</a>
+      <a href="#notifications">Notifications</a>
+      <a href="#calls">Calls</a>
+      <a href="#find-device">Find Device</a>
+      <p>Reference</p>
+      <a href="#permissions">Permissions</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="#diagnostics">Diagnostics</a>
+      <a href="#build">Build from source</a>
+    </aside>
+
+    <main class="docs-content" id="docs-content">
+      <section class="docs-hero" id="overview">
+        <p class="eyebrow">Bridgey docs · v0.5 alpha</p>
+        <h1>Connect Android and macOS.</h1>
+        <p>Bridgey works directly over your local network. No account, telemetry, or mandatory cloud service is involved.</p>
+        <div class="docs-callout"><strong>Alpha software</strong><span>Core workflows work, but call and notification behavior can still vary between Android vendors. Keep both apps updated while testing.</span></div>
+      </section>
+
+      <section class="docs-article" id="install">
+        <p class="doc-kicker">01 · Get started</p>
+        <h2>Install Bridgey</h2>
+        <h3>Android</h3>
+        <ol>
+          <li>Download <code>Bridgey-Android.apk</code> from the latest GitHub Release.</li>
+          <li>Open the APK and allow installation from that source when Android asks.</li>
+          <li>Launch Bridgey and allow notifications so its persistent connection and transfer controls remain available.</li>
+        </ol>
+        <div class="docs-note">Android may warn that the APK came from outside Google Play. Verify that it came from the official release page and compare the published SHA-256 checksum.</div>
+        <h3>macOS</h3>
+        <ol>
+          <li>Download and extract the Bridgey macOS archive from the same release.</li>
+          <li>Move <code>Bridgey.app</code> to Applications.</li>
+          <li>On the first unsigned build launch, Control-click the app, choose <b>Open</b>, and confirm.</li>
+          <li>Bridgey appears in the macOS menu bar rather than the Dock.</li>
+        </ol>
+      </section>
+
+      <section class="docs-article" id="pair">
+        <p class="doc-kicker">02 · Trust</p>
+        <h2>Pair your devices</h2>
+        <ol>
+          <li>Connect the Mac and Android phone to the same local network.</li>
+          <li>Open Bridgey on both devices and wait for the device name to appear.</li>
+          <li>Select the peer and compare the six-digit verification code.</li>
+          <li>Confirm on both devices. Trust is stored only after both confirmations succeed.</li>
+        </ol>
+        <p>Bridgey treats discovery information as an untrusted hint. Every reconnect must still prove possession of the key pinned during pairing.</p>
+      </section>
+
+      <section class="docs-article" id="clipboard">
+        <p class="doc-kicker">03 · Everyday use</p>
+        <h2>Clipboard</h2>
+        <p>On Android, copy the content first and use <b>Send clipboard</b> from Bridgey's persistent notification. Android does not allow reliable silent background clipboard reads, so sending always starts from an explicit action.</p>
+        <p>On macOS, choose <b>Clipboard</b> in the menu-bar panel or use the configured global shortcut. Plain text and HTML are supported; oversized clipboard payloads should be sent as a diagnostic or regular file.</p>
+      </section>
+
+      <section class="docs-article" id="files">
+        <p class="doc-kicker">04 · Transfer</p>
+        <h2>Files</h2>
+        <div class="docs-columns">
+          <div><h3>Android to Mac</h3><p>Use <b>Send file</b> in Bridgey or Android's system Share sheet. Received files are stored in the folder selected in macOS Settings.</p></div>
+          <div><h3>Mac to Android</h3><p>Use <b>File</b> in the menu-bar panel or drop a file into the Bridgey File Drop window. Android stores completed files in <code>Download/Bridgey</code>.</p></div>
+        </div>
+        <p>Every transfer exposes progress and cancellation on both devices. The receiver verifies byte count and SHA-256 before the partial file becomes final.</p>
+      </section>
+
+      <section class="docs-article" id="notifications">
+        <p class="doc-kicker">05 · Stay informed</p>
+        <h2>Android notifications on Mac</h2>
+        <ol>
+          <li>Open Android Bridgey and choose <b>Notification access settings</b>.</li>
+          <li>Enable access for Bridgey.</li>
+          <li>Enable Notification forwarding globally and for the trusted Mac.</li>
+          <li>Allow notifications when macOS asks.</li>
+        </ol>
+        <p>Supported Android action buttons and inline replies appear on macOS. Dismissing a mirrored notification removes the corresponding Android notification when the source permits it. Per-application filters run before content leaves the phone.</p>
+      </section>
+
+      <section class="docs-article" id="calls">
+        <p class="doc-kicker">06 · Phone integration</p>
+        <h2>Calls</h2>
+        <p>Copy a telephone number on the Mac and select <b>Call</b>, use the configured shortcut, or choose <b>Services → Call with Bridgey</b> for selected text. Bridgey validates the number and blocks direct handling of recognized emergency numbers.</p>
+        <p>Confirmation mode opens the Android system dialer. The optional Calls from Mac integration requests narrow phone permissions and enables direct start plus visible Answer, Decline, and Hang Up controls on macOS. Contacts and call history are not read.</p>
+      </section>
+
+      <section class="docs-article" id="find-device">
+        <p class="doc-kicker">07 · Locate</p>
+        <h2>Find Device</h2>
+        <p>Select <b>Ring</b> on the connected device card. The peer plays a find-device alert and exposes a local Stop action. Stopping on either side synchronizes the state to the other device.</p>
+      </section>
+
+      <section class="docs-article" id="permissions">
+        <p class="doc-kicker">08 · Privacy</p>
+        <h2>Permissions</h2>
+        <div class="permission-table" role="table" aria-label="Bridgey permissions">
+          <div role="row"><b role="cell">Android notifications</b><span role="cell">Persistent connection, transfer actions, received files, and Find Device controls.</span></div>
+          <div role="row"><b role="cell">Notification access</b><span role="cell">Optional forwarding of sanitized notification metadata and exposed actions.</span></div>
+          <div role="row"><b role="cell">Phone</b><span role="cell">Optional validated calling, state detection, Answer, Decline, and Hang Up.</span></div>
+          <div role="row"><b role="cell">Local network</b><span role="cell">Discovery and encrypted direct communication between paired devices.</span></div>
+          <div role="row"><b role="cell">macOS notifications</b><span role="cell">Optional display of mirrored Android notifications.</span></div>
+        </div>
+        <p>Bridgey currently does not request location, contacts, SMS history, call log, microphone, camera, Accessibility, Input Monitoring, Screen Recording, Full Disk Access, or unrestricted Android storage.</p>
+      </section>
+
+      <section class="docs-article" id="troubleshooting">
+        <p class="doc-kicker">09 · Troubleshooting</p>
+        <h2>Common problems</h2>
+        <details open><summary>Devices do not appear</summary><p>Confirm both devices are on the same LAN, disable guest-network client isolation, keep Bridgey enabled on Android, and temporarily check whether a VPN or firewall blocks local discovery.</p></details>
+        <details><summary>One device says Connected, the other does not</summary><p>Wait for one reconnect cycle, then use Turn off Bridgey on Android and launch it again. If the state persists, export diagnostics before forgetting and pairing the devices again.</p></details>
+        <details><summary>Notifications do not reach the Mac</summary><p>Check Android Notification access, the global feature switch, the per-device override, the per-application filter, and macOS notification permission for Bridgey.app.</p></details>
+        <details><summary>Call controls are missing or stale</summary><p>Verify Calls from Mac and its runtime phone permissions on Android. OEM phone applications expose different notification actions, so the explicit integration is more reliable than notification-only mode.</p></details>
+        <details><summary>A transfer stops after disconnecting</summary><p>The current protocol does not resume partial files. Retry the item after reconnecting; incomplete receiver files are removed safely.</p></details>
+      </section>
+
+      <section class="docs-article" id="diagnostics">
+        <p class="doc-kicker">10 · Support data</p>
+        <h2>Export diagnostics</h2>
+        <p>Settings can export a bounded JSON diagnostics file containing versions, feature states, connection events, and transfer counts. It excludes clipboard text, notification contents, filenames, addresses, device IDs, session IDs, and transfer IDs.</p>
+        <p>When reporting a bug, attach this JSON as a file rather than putting it into the clipboard.</p>
+      </section>
+
+      <section class="docs-article" id="build">
+        <p class="doc-kicker">11 · Contributors</p>
+        <h2>Build from source</h2>
+        <h3>Android</h3>
+        <pre><code>cd android
+./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug</code></pre>
+        <p>Use JDK 17 and Android SDK 36, or open the <code>android/</code> directory in Android Studio.</p>
+        <h3>macOS</h3>
+        <pre><code>cd macos
+swift test -Xswiftc -warnings-as-errors
+./build-app.sh</code></pre>
+        <p>The native app requires macOS 13 or newer. For deeper implementation details, continue with the project references below.</p>
+        <div class="reference-links">
+          <a href="https://github.com/singeol/bridgey/blob/main/docs/architecture.md">Architecture ↗</a>
+          <a href="https://github.com/singeol/bridgey/blob/main/docs/protocol.md">Protocol ↗</a>
+          <a href="https://github.com/singeol/bridgey/blob/main/SECURITY.md">Security ↗</a>
+          <a href="https://github.com/singeol/bridgey/blob/main/docs/security-testing.md">Security testing ↗</a>
+          <a href="https://github.com/singeol/bridgey/blob/main/docs/releasing.md">Releasing ↗</a>
+        </div>
+      </section>
+
+      <nav class="docs-next" aria-label="Next steps">
+        <div><span>Next step</span><strong>Download the latest alpha and pair your devices.</strong></div>
+        <a class="button" href="https://github.com/singeol/bridgey/releases/latest">Open releases</a>
+      </nav>
+    </main>
+  </div>
+
+  <footer class="docs-footer">
+    <div class="brand"><img src="../assets/bridgey-icon.png" alt="" width="34" height="34"><span>Bridgey</span></div>
+    <p>Open source under the MIT License. Built with Codex as an AI coding collaborator.</p>
+    <a href="../">Back to overview</a>
+  </footer>
+</body>
+</html>

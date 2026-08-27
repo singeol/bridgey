@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bridgey.ai/sitemap.xml
