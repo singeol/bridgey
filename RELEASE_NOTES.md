@@ -1,33 +1,36 @@
-# Bridgey v0.5.0-alpha.11
+# Bridgey v0.5.0-alpha.12
 
-This Bridgey preview introduces a unified visual identity for Android, macOS,
-and the web, and publishes the project's first public website and documentation.
+This patch preview fixes repeated Android Share launches and improves the
+documentation experience on phones and tablets.
 
-## Changes since alpha.10
+## Changes since alpha.11
 
-- Replaced the Android and macOS application icons with the new Bridgey `B`
-  mark in a shared navy, cyan, and blue visual style.
-- Added matching Android adaptive and monochrome icons so the mark remains
-  recognizable with themed launcher icons and in system notifications.
-- Added the Bridgey website and documentation at
-  [bridgey.ai](https://bridgey.ai/), deployed automatically with GitHub Pages.
-- Added search metadata, canonical URLs, Open Graph and Twitter cards,
-  structured data, `robots.txt`, and a sitemap for search-engine indexing.
-- Expanded the public roadmap from v0.6 through v1.0, including media controls,
-  remote input, presentation controls, Files 2.0, multiple devices, bounded
-  automation, experimental screen sharing, and the stable-release criteria.
-- Documented additional post-1.0 ideas that extend beyond KDE Connect while
-  retaining Bridgey's local-first and permission-minimizing design.
+- Reuse the existing Bridgey task when files, photos, or text are shared from
+  another Android application instead of accumulating multiple Bridgey windows
+  in Recents.
+- Deliver every subsequent Share request to the active `MainActivity` so the
+  newest file or text still reaches the confirmation dialog when Bridgey is
+  already open or running in the background.
+- Explicitly reject Android document-task launch flags for Bridgey's main
+  activity and add a regression test for the required manifest configuration.
+- Replace the documentation grid with a stable single-column layout on phones
+  and tablets.
+- Improve mobile documentation typography, spacing, cards, permission rows,
+  buttons, and wrapping of long filenames, code, and reference links.
+- Verify that the documentation has no horizontal overflow at a 390 px mobile
+  viewport.
 
 ## Test focus
 
-- Confirm the new `B` icon on the Android launcher, Android notifications,
-  the macOS app, menu-bar notifications, and the mounted DMG.
-- Upgrade over alpha.10 and confirm that pairing and trusted-device settings
-  are retained.
-- Smoke-test reconnect, clipboard sharing, file transfer, notification actions,
-  Find Device, battery status, and call controls in both directions.
-- Open the website and documentation on desktop and mobile browsers.
+- Share several photos or files to Bridgey one after another and confirm that
+  Android Recents contains only one Bridgey window.
+- Repeat while Bridgey is foregrounded, backgrounded, and absent from Recents.
+- Confirm that every Share request opens the correct confirmation dialog and
+  transfers the selected item after approval.
+- Check [the documentation](https://bridgey.ai/docs/) on a narrow phone screen,
+  including Files, Permissions, Build from source, and the final download card.
+- Smoke-test reconnect, clipboard, regular file selection, notifications,
+  Find Device, battery status, and call controls.
 
 ## Downloads
 
@@ -44,7 +47,5 @@ and the web, and publishes the project's first public website and documentation.
 - Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
   credentials are configured.
-- A newly configured custom domain can require DNS propagation and certificate
-  issuance before GitHub Pages can enforce HTTPS.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).
