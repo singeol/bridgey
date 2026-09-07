@@ -24,4 +24,11 @@ class BridgeySettingsTest {
         assertFalse(effectiveFeatureAvailable(localEnabled = true, remoteEnabled = false))
         assertFalse(effectiveFeatureAvailable(localEnabled = false, remoteEnabled = true))
     }
+
+    @Test
+    fun newerFeaturesAreOffForLegacyPeers() {
+        assertFalse(featureEnabledByLegacyPeer(BridgeyFeature.CALLS))
+        assertFalse(featureEnabledByLegacyPeer(BridgeyFeature.PING))
+        assertTrue(featureEnabledByLegacyPeer(BridgeyFeature.BATTERY))
+    }
 }

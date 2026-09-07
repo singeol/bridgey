@@ -116,6 +116,10 @@ private struct FindDevicePayload: Codable {
     let alertId: String
 }
 
+private struct PingPayload: Codable {
+    let version: Int
+}
+
 private struct CallRequestPayload: Codable {
     let number: String
 }
@@ -126,7 +130,7 @@ private struct FeatureStatePayload: Codable {
 }
 
 private func defaultRemoteFeatureState() -> [BridgeyFeature: Bool] {
-    Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0, $0 != .calls) })
+    Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0, featureEnabledByLegacyPeer($0)) })
 }
 
 private final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
@@ -175,6 +179,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var notificationHistory: [NotificationHistoryItem] = []
     @Published private(set) var remoteCall: RemoteCallStatus?
     @Published private(set) var callStatus: String?
+    @Published private(set) var pingStatus: String?
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -201,6 +206,8 @@ final class PairingCoordinator: ObservableObject {
     private var callRequestID: String?
     private var callTimeoutWorkItem: DispatchWorkItem?
     private var callStatusClearWorkItem: DispatchWorkItem?
+    private var pingRequestID: String?
+    private var pingStatusClearWorkItem: DispatchWorkItem?
     private var pendingCallNumber: String?
     private var pendingCallExpiryWorkItem: DispatchWorkItem?
     private var remoteFeatureStateReceived = false
@@ -220,6 +227,7 @@ final class PairingCoordinator: ObservableObject {
     private var audibleCallIdentity: String?
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
+    private var lastSentBattery: LocalBatteryStatus?
     private let diagnostics = BridgeyDiagnostics()
     private let notificationHistoryStore: NotificationHistoryStore
 
@@ -285,6 +293,7 @@ final class PairingCoordinator: ObservableObject {
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
+                    if !self.featureEnabled(.ping) { self.clearPingStatus() }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     if !self.featureEnabled(.notifications) { self.clearRemoteCall() }
                     if !self.featureEnabled(.calls) {
@@ -297,6 +306,7 @@ final class PairingCoordinator: ObservableObject {
                         self.clearNotificationHistory()
                     }
                     self.sendFeatureState()
+                    self.publishLocalBattery(force: true)
                 }
             }
     }
@@ -367,6 +377,9 @@ final class PairingCoordinator: ObservableObject {
         current.localEphemeralKey = current.privateKey!.publicKey.x963Representation.base64EncodedString()
         session?.close()
         session = current
+        remoteBattery = nil
+        clearPingStatus()
+        lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -420,6 +433,8 @@ final class PairingCoordinator: ObservableObject {
         clearPendingCall()
         clearCallStatus()
         clearClipboardSendStatus()
+        clearPingStatus()
+        lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -438,6 +453,8 @@ final class PairingCoordinator: ObservableObject {
         clearPendingCall()
         clearCallStatus()
         clearClipboardSendStatus()
+        clearPingStatus()
+        lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -626,6 +643,99 @@ final class PairingCoordinator: ObservableObject {
         clipboardTimeoutWorkItem = nil
         clipboardSendID = nil
         clipboardStatus = nil
+    }
+
+    func sendPing() {
+        guard let current = session, case .connected = state else {
+            setTransientPingStatus("Android is not connected")
+            return
+        }
+        guard isFeatureAvailable(.ping) else {
+            setTransientPingStatus("Ping requires Bridgey 0.6 on both devices")
+            return
+        }
+        guard let plaintext = try? JSONEncoder().encode(PingPayload(version: 1)),
+              let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else {
+            setTransientPingStatus("Ping could not be encrypted")
+            return
+        }
+        let messageID = UUID().uuidString.lowercased()
+        pingRequestID = messageID
+        pingStatusClearWorkItem?.cancel()
+        pingStatus = "Pinging Android…"
+        current.send(PairingMessage(
+            kind: "ping.request",
+            sessionId: current.id,
+            messageId: messageID,
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
+        let timeout = DispatchWorkItem { [weak self] in
+            guard self?.pingRequestID == messageID else { return }
+            self?.pingRequestID = nil
+            self?.setTransientPingStatus("Android did not acknowledge the ping")
+        }
+        pingStatusClearWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: timeout)
+    }
+
+    private func receivePing(_ message: PairingMessage, in current: Session) throws {
+        guard featureEnabled(.ping, current: current) else {
+            sendFeatureState()
+            return
+        }
+        guard case .connected = state,
+              message.sessionId == current.id,
+              let messageID = message.messageId,
+              current.acceptMessageID(messageID),
+              let nonce = message.nonce,
+              let ciphertext = message.ciphertext,
+              let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
+              let payload = try? JSONDecoder().decode(PingPayload.self, from: plaintext),
+              payload.version == 1 else { throw PairingError.invalidMessage }
+        NSSound(named: NSSound.Name("Glass"))?.play()
+        setTransientPingStatus("Ping from \(current.peerName)")
+        current.send(PairingMessage(kind: "ping.ack", sessionId: current.id, messageId: messageID))
+        NSLog("PLUGIN ping received")
+    }
+
+    private func setTransientPingStatus(_ value: String) {
+        pingStatusClearWorkItem?.cancel()
+        pingStatus = value
+        let work = DispatchWorkItem { [weak self] in
+            self?.pingStatus = nil
+            self?.pingStatusClearWorkItem = nil
+        }
+        pingStatusClearWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+    }
+
+    private func clearPingStatus() {
+        pingRequestID = nil
+        pingStatusClearWorkItem?.cancel()
+        pingStatusClearWorkItem = nil
+        pingStatus = nil
+    }
+
+    private func publishLocalBattery(force: Bool = false) {
+        guard isFeatureAvailable(.battery),
+              let current = session, case .connected = state,
+              let status = currentMacBatteryStatus(),
+              force || status != lastSentBattery,
+              let plaintext = try? JSONEncoder().encode(BatteryPayload(
+                level: status.level,
+                isCharging: status.isCharging
+              )),
+              let encrypted = try? encrypt(plaintext, key: current.pairingKey!) else { return }
+        lastSentBattery = status
+        current.send(PairingMessage(
+            kind: "battery.update",
+            sessionId: current.id,
+            messageId: UUID().uuidString.lowercased(),
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext
+        ))
+        NSLog("PLUGIN battery sent level=%d charging=%@", status.level, String(status.isCharging))
     }
 
     func findAndroid() {
@@ -925,6 +1035,9 @@ final class PairingCoordinator: ObservableObject {
         let current = Session(connection: connection, peerName: "Android device")
         current.initiatedLocally = false
         session = current
+        remoteBattery = nil
+        clearPingStatus()
+        lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -951,6 +1064,8 @@ final class PairingCoordinator: ObservableObject {
             if case .connected = self.state {
                 self.session = nil
                 self.remoteBattery = nil
+                self.clearPingStatus()
+                self.lastSentBattery = nil
                 self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.remoteFeatureStateReceived = false
@@ -977,6 +1092,8 @@ final class PairingCoordinator: ObservableObject {
                     self.connectionTimeoutWorkItem?.cancel()
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
+                    self.clearPingStatus()
+                    self.lastSentBattery = nil
                     self.clearRemoteCall()
                     self.remoteFeatureStateReceived = false
                     current.close()
@@ -1065,7 +1182,7 @@ final class PairingCoordinator: ObservableObject {
                       let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
                       let payload = try? JSONDecoder().decode(FeatureStatePayload.self, from: plaintext),
                       payload.version == 1,
-                      BridgeyFeature.allCases.filter({ $0 != .calls }).allSatisfy({ payload.features[$0.rawValue] != nil }) else {
+                      BridgeyFeature.allCases.filter(featureEnabledByLegacyPeer).allSatisfy({ payload.features[$0.rawValue] != nil }) else {
                     throw PairingError.invalidMessage
                 }
                 remoteFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
@@ -1073,6 +1190,7 @@ final class PairingCoordinator: ObservableObject {
                 })
                 remoteFeatureStateReceived = true
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
+                if remoteFeatures[.ping] == false { clearPingStatus() }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
                 if remoteFeatures[.notifications] == false { clearRemoteCall() }
                 if remoteFeatures[.calls] == false { clearCallStatus() }
@@ -1085,6 +1203,14 @@ final class PairingCoordinator: ObservableObject {
                     androidRinging = false
                 }
                 flushPendingCallIfPossible()
+                publishLocalBattery(force: true)
+            case "ping.request":
+                try receivePing(message, in: current)
+            case "ping.ack":
+                guard message.sessionId == current.id,
+                      message.messageId == pingRequestID else { return }
+                pingRequestID = nil
+                setTransientPingStatus("Ping delivered")
             case "clipboard.update", "clipboard.rich":
                 guard featureEnabled(.clipboard, current: current) else {
                     current.send(PairingMessage(
@@ -1385,6 +1511,7 @@ final class PairingCoordinator: ObservableObject {
             reconnectAttempt = 0
             reconnectWorkItem?.cancel()
             sendFeatureState()
+            publishLocalBattery(force: true)
             scheduleHeartbeat(for: current)
             NSLog("PAIRING verified peer=%@", current.peerName)
         }
@@ -1545,6 +1672,7 @@ final class PairingCoordinator: ObservableObject {
                 sessionId: current.id,
                 messageId: UUID().uuidString.lowercased()
             ))
+            self.publishLocalBattery()
             self.scheduleHeartbeat(for: current)
         }
         heartbeatWorkItem = work

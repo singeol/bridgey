@@ -184,18 +184,36 @@ details p { margin-top: 0; }
 .docs-footer { border-top: 1px solid var(--line); }
 
 @media (max-width: 900px) {
-  .docs-layout { grid-template-columns: 1fr; }
+  .docs-layout { display: block; }
   .docs-sidebar { display: none; }
   .docs-header nav { display: none; }
+  .docs-content { min-width: 0; max-width: 100%; margin-inline: 0; overflow-wrap: anywhere; }
 }
 
 @media (max-width: 600px) {
-  .docs-header { padding-inline: 14px; }
+  .docs-header { height: 68px; gap: 12px; padding-inline: 14px; }
+  .docs-header .brand img { width: 36px; height: 36px; border-radius: 9px; }
   .docs-label { display: none; }
   .docs-layout { width: calc(100% - 28px); }
-  .docs-hero { padding-top: 70px; }
-  .docs-hero h1 { font-size: clamp(3rem, 14vw, 4.6rem); }
-  .docs-callout, .permission-table > div, .docs-columns { grid-template-columns: 1fr; }
-  .docs-article { padding: 60px 0; }
-  .docs-next { align-items: flex-start; flex-direction: column; }
+  .docs-hero { padding: 54px 0 52px; }
+  .docs-hero h1 { max-width: 100%; font-size: clamp(2.55rem, 13vw, 3.4rem); line-height: .98; letter-spacing: -.055em; }
+  .docs-hero > p:not(.eyebrow) { font-size: 1rem; line-height: 1.6; }
+  .docs-callout, .permission-table > div, .docs-columns { grid-template-columns: minmax(0, 1fr); }
+  .docs-callout { gap: 8px; margin-top: 26px; padding: 18px; }
+  .docs-article { padding: 50px 0; }
+  .docs-article h2 { margin-bottom: 20px; font-size: clamp(2rem, 10vw, 2.65rem); }
+  .docs-article h3 { margin-top: 30px; }
+  .docs-article p, .docs-article li { font-size: .96rem; line-height: 1.68; }
+  .docs-article ol { padding-left: 21px; }
+  .docs-article li { padding-left: 4px; }
+  .docs-columns { gap: 12px; }
+  .docs-columns > div { min-width: 0; padding: 18px; }
+  .permission-table > div { gap: 7px; padding: 17px 0; }
+  .docs-note, pre { max-width: 100%; }
+  code { overflow-wrap: anywhere; word-break: break-word; }
+  pre code { overflow-wrap: normal; word-break: normal; }
+  .reference-links a { max-width: 100%; overflow-wrap: anywhere; }
+  .docs-next { align-items: stretch; flex-direction: column; gap: 22px; margin: 56px 0; padding: 22px; }
+  .docs-next .button { width: 100%; }
+  .docs-footer { padding-block: 28px; }
 }
