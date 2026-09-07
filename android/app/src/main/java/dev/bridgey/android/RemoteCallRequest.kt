@@ -51,13 +51,16 @@ internal class RemoteCallRequest(private val context: Context) {
                 description = "Calls requested from a trusted Bridgey device"
             },
         )
-        val dialIntent = Intent(context, ConfirmCallActivity::class.java)
-            .putExtra("number", normalized).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val dialIntent = Intent()
+        dialIntent.setClass(context, ConfirmCallActivity::class.java)
+        dialIntent.data = uri // Distinct PendingIntent identity for each validated number.
+        dialIntent.putExtra("number", normalized)
+        dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pendingIntent = PendingIntent.getActivity(
             context,
             normalized.hashCode(),
             dialIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = android.app.Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(dev.bridgey.android.R.drawable.ic_bridgey_notification)
