@@ -203,9 +203,13 @@ private struct BridgeyPanel: View {
                 }
                 if pairing.isFeatureAvailable(.calls) {
                     actionButton("Call", icon: "phone.arrow.up.right") { pairing.sendCallFromClipboard() }
-                        .help("Call the phone number currently in the clipboard (⌃⌥P)")
+                        .help("Call the phone number currently in the clipboard")
+                }
+                if pairing.isFeatureAvailable(.links) {
+                    actionButton("Link", icon: "link") { pairing.quickActions.sendClipboardLink() }
                 }
             }
+            QuickActionsPanel(actions: pairing.quickActions)
             if pairing.isFeatureAvailable(.files) {
                 Button { pairing.showFileDropWindow() } label: {
                     Label(
@@ -233,6 +237,7 @@ private struct BridgeyPanel: View {
                 !pairing.isFeatureAvailable(.files) &&
                 !pairing.isFeatureAvailable(.findDevice) &&
                 !pairing.isFeatureAvailable(.ping) &&
+                !pairing.isFeatureAvailable(.links) &&
                 !pairing.isFeatureAvailable(.calls) {
                 Text("Quick actions are turned off in Settings on one of your devices.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -487,6 +492,8 @@ private struct SettingsView: View {
                         .foregroundStyle(phoneLinkStatus.hasPrefix("Could not") ? .red : .secondary)
                 }
             }
+            MediaSettingsView(media: pairing.mediaController)
+            ShortcutSettingsView(shortcuts: pairing.shortcuts)
             Section("Notification history") {
                 Toggle("Keep a private local history", isOn: Binding(
                     get: { settings.notificationHistoryEnabled },

@@ -44,12 +44,13 @@ else
   echo "warning: actool is unavailable; keeping the compatible Bridgey.icns icon only" >&2
 fi
 if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
-  codesign --force --deep --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
+  codesign --force --deep --options runtime --timestamp --entitlements Resources/Bridgey.entitlements --sign "$MACOS_SIGNING_IDENTITY" "$APP_PATH"
 else
   # Keep an explicit, stable designated requirement for ad-hoc builds. System
   # services such as Notification Center and Local Network privacy otherwise
   # see only a changing code hash after each update and can lose bundle metadata.
   codesign --force --deep --sign - \
+    --entitlements Resources/Bridgey.entitlements \
     --requirements '=designated => identifier "dev.bridgey.mac"' \
     "$APP_PATH"
 fi

@@ -22,7 +22,7 @@ client can later implement the same public protocol without Android changes.
 ## MVP scope
 
 - Explicit two-device pairing with a shared verification code
-- Persistent TLS WebSocket connections with public-key pinning
+- Persistent TCP connections with application-layer AES-GCM encryption and pinned peer signing identities
 - Plain-text and HTML clipboard synchronization with a safe payload limit
 - Streaming file transfer with progress and cancellation
 - Android notification forwarding to native macOS notifications
@@ -76,14 +76,21 @@ the stable release.
 
 ### v0.6.0 — media and quick actions
 
-- [ ] Control macOS media from Android: play/pause, previous/next, seek, and volume
-- [ ] Show bounded now-playing metadata and artwork where public platform APIs allow it
-- [ ] Optionally pause or mute media while a phone call is ringing or active
-- [ ] Send and explicitly open web links in either direction
+- [x] Control Music/Spotify on macOS from Android: play/pause, previous/next, seek, and player volume
+- [x] Show bounded now-playing metadata and local Music artwork when exposed by the player
+- [x] Optionally pause the selected player while a phone call is ringing or active
+- [x] Send and explicitly open web links in either direction
 - [x] Add a lightweight Ping action separate from Find Device
 - [x] Show Mac battery status on Android
-- [ ] Add an Android Quick Settings tile and configurable macOS shortcuts
+- [x] Add an Android Quick Settings tile and configurable macOS shortcuts
 - [ ] Complete multi-OEM stabilization of the v0.5 call and notification lifecycle
+
+The 0.6 feature implementation is ready for release-candidate testing, not yet
+device-certified. See the [complete 0.6 acceptance checklist](docs/testing-0.6.md).
+Media control is opt-in on Mac and uses public player automation; it is not
+universal browser/system media control. Artwork is optional, local-only, and
+currently limited to Music. Other Android vendors still need physical-device
+validation; unit-test coverage is not a substitute.
 
 ### v0.7.0 — remote input and presentations
 

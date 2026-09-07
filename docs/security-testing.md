@@ -22,6 +22,28 @@ The project therefore uses layered checks:
 - diagnostics tests that ensure exported reports contain aggregate state but
   exclude file names and protocol identifiers.
 
+## 0.6 review
+
+- Resolved CodeQL `java/android/implicit-pendingintents`: the immutable call
+  confirmation PendingIntent now targets a private, explicit Bridgey activity.
+  Only the local tap launches ACTION_DIAL; the fallback does not place a call.
+- Added manifest regression coverage for the private confirmation activity and
+  permission-protected Quick Settings service. No new Android uses-permission.
+- Added URL scheme/credential/length validation tests on both platforms,
+  per-session encrypted request-sequence replay tests, and Swift tests for the
+  media command allowlist, integer bounds and malformed/oversized artwork.
+- Mac automation is opt-in, restricted to locally selected Music/Spotify,
+  serialized off the UI thread and time/output bounded. No Accessibility,
+  remote shell, browser scripting, artwork URL fetch or media-library scanning.
+- Dependency PRs #12, #13 and #14 were reviewed with green Build, CodeQL and
+  Dependency Review checks: setup-java v6 and matching AGP 9.4.0 plugins.
+
+Green CodeQL is not a full protocol audit. In particular, application-layer
+encryption is not the proposed TLS transport, and not all legacy envelope
+headers/acknowledgements are authenticated. A transport-wide authenticated
+envelope/sequence design and independent security review remain hardening work.
+Device/OEM acceptance is recorded separately in `testing-0.6.md`.
+
 Future device-level dynamic coverage should extend the interoperability harness
 to run both UI applications, mutate authenticated protocol frames, and interrupt
 live file streams. It should run in isolated Android emulator and macOS runner

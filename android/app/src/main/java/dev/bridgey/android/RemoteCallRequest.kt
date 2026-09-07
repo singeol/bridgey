@@ -51,7 +51,8 @@ internal class RemoteCallRequest(private val context: Context) {
                 description = "Calls requested from a trusted Bridgey device"
             },
         )
-        val dialIntent = Intent(Intent.ACTION_DIAL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val dialIntent = Intent(context, ConfirmCallActivity::class.java)
+            .putExtra("number", normalized).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pendingIntent = PendingIntent.getActivity(
             context,
             normalized.hashCode(),
@@ -88,5 +89,18 @@ internal class RemoteCallRequest(private val context: Context) {
     companion object {
         private const val CHANNEL_ID = "bridgey_call_requests"
         private const val NOTIFICATION_ID = 41_770
+    }
+}
+
+/** Only an explicit user tap on Bridgey's immutable notification can enter here. */
+class ConfirmCallActivity : android.app.Activity() {
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        val number = intent.getStringExtra("number")?.let(::normalizedPhoneNumber)
+        if (number != null) {
+            runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))) }
+                .onFailure { android.widget.Toast.makeText(this, "No dialer available", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+        finish()
     }
 }

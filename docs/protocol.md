@@ -1,8 +1,25 @@
 # Bridgey Protocol v1
 
-Status: draft. This document is normative for wire interoperability. JSON is
-UTF-8 encoded. Implementations must ignore unknown object fields but reject
-unknown major envelope versions.
+Status: mixed implementation reference and future design draft. The native
+clients currently use newline-delimited JSON over TCP, **not TLS/WebSockets**.
+The proposed WebSocket envelope and `core.hello` negotiation below are future
+design, not the wire format shipped in 0.5/0.6. JSON is UTF-8 encoded.
+
+## Current native transport (0.5/0.6)
+
+`PairingMessage` / Android `Message` use `kind`, `sessionId`, optional
+`messageId`, and message-specific fields. Encrypted payloads use base64 `nonce`
+and `ciphertext` (AES-GCM ciphertext followed by its authentication tag).
+Native frames have a 65,536-byte limit. The session ID salts HKDF-SHA-256 for
+ephemeral P-256 ECDH; the shared info is `bridgey-pairing-v1`. The displayed code
+is derived from the first four key bytes modulo 1,000,000. Confirmation HMACs
+bind identity keys; P-256 signatures bind session ID, ordered device IDs and
+ephemeral keys. Trusted reconnects verify the stored peer signing identity.
+
+Payload encryption is application-layer protection, not TLS. Routing headers
+and some acknowledgements remain outside the encrypted payload; traffic
+metadata is visible. Replay caches are bounded and session-local, not persistent.
+The future transport design must not be advertised as an implemented guarantee.
 
 ## Discovery
 
@@ -76,10 +93,10 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, `find_device`, `ping`, and `calls`. A UI action is
+`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, and `media`. A UI action is
 available only when both peers report the corresponding feature as enabled. Clients
 predating this message are treated as enabling the original v1 features for
-compatibility; the later `calls` and `ping` features are disabled unless a peer
+compatibility; the later `calls`, `ping`, `links`, and `media` features are disabled unless a peer
 advertises them explicitly.
 
 ## Pairing flow
@@ -103,6 +120,43 @@ short code is a human MITM check, not a password. Detailed primitive and storage
 requirements are in `SECURITY.md`.
 
 ## Plugin messages
+
+### Quick actions (native 0.6)
+
+`quick.request`, `quick.result` and `media.state` are AES-GCM-encrypted payloads
+accepted only in the current connected session. Requests/results are limited
+to 8 KiB plaintext; media state to 32 KiB. The normal 65,536-byte frame bound
+still applies. Unknown versions, malformed values and stale sessions are ignored.
+
+Requests contain `version: 1`, UUID `requestId`, `feature`, `action`, string
+`value`, and positive integer `sequence` (at most 2^53−1). Receivers retain a
+per-feature sequence high-water mark for the entire session, independent of
+the outer message ID/replay cache; old encrypted requests cannot re-execute by
+changing that ID. Sender sequences increase and requests are not auto-retried.
+An authenticated result echoes the inner requestId and feature with boolean
+`accepted`. Pending operations time out after eight seconds and are cleared
+on disconnect or feature disable. Timeout means “not confirmed”, not an assertion
+that an operation definitely never reached the other peer.
+
+- `links` / `offer`: 4,096 UTF-8 bytes maximum, HTTP(S) only, nonempty host,
+  no user credentials, whitespace/control characters or backslashes, valid
+  optional port. One pending received link per device; a second is declined.
+  Acceptance means queued for explicit local Open/Dismiss, **not** opened.
+- `media`: Android → Mac, only `toggle`, `pause`, `next`, `previous`, `seek`
+  (integer seconds 0…604800), `volume` (integer 0…100). The Mac must locally
+  opt in and select running Music or Spotify. Commands map to fixed player
+  AppleScript instructions, never received source code or a remote shell.
+  Automation failures and a busy player are reported as rejected. Accepted
+  means the player command completed, not that a particular track must exist.
+- `media.state`: Mac → Android; `version`, `player`, `title`/`artist` (256
+  characters each), boolean `playing`, integer `position`/`duration`
+  (0…604800), `volume` (0…100), bounded `detail`. Optional base64 `artwork`
+  contains at most 16 KiB JPEG, at most 128×128 pixels. The receiver validates
+  both encoded size and decoded dimensions before allocating a bitmap.
+
+Music artwork comes from player automation, not filesystem browsing; it is
+optional and may be unavailable. Spotify artwork is not downloaded. Metadata
+refreshes after commands/settings changes and on the ten-second heartbeat.
 
 ### Battery (`battery.send.v1`)
 

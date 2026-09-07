@@ -524,7 +524,18 @@ private fun BridgeyApp(
                     },
                 ) { Text("Send") }
             },
-            dismissButton = { TextButton(onClick = onSharedContentHandled) { Text("Cancel") } },
+            dismissButton = {
+                Row {
+                    if (content.files.isEmpty() && content.text?.let(::validatedWebLink) != null &&
+                        pairing.isFeatureAvailable(BridgeyFeature.LINKS)) {
+                        TextButton(onClick = {
+                            pairing.quickActions.sendLink(content.text.orEmpty())
+                            onSharedContentHandled()
+                        }) { Text("Send as link") }
+                    }
+                    TextButton(onClick = onSharedContentHandled) { Text("Cancel") }
+                }
+            },
         )
     }
 }
@@ -755,6 +766,12 @@ private fun DeviceScreen(
                     onPing = pairing::sendPing,
                 )
             }
+            if (enabledFeatures[BridgeyFeature.LINKS] == true || enabledFeatures[BridgeyFeature.MEDIA] == true) {
+                item {
+                    QuickActionsCard(pairing.quickActions, enabledFeatures[BridgeyFeature.LINKS] == true,
+                        enabledFeatures[BridgeyFeature.MEDIA] == true)
+                }
+            }
         } else {
             item { DiscoveryHeader(pairingState, peers.isEmpty()) }
         }
@@ -787,6 +804,7 @@ private fun DeviceScreen(
         }
 
         item { SectionTitle("Services") }
+        item { Text("Quick Settings: edit the tiles in your notification shade and add ‘Bridgey clipboard’ to send copied text.", style = MaterialTheme.typography.bodySmall) }
         item {
             ServiceCard(
                 enabled = appNotificationsEnabled,

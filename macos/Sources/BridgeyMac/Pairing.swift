@@ -180,6 +180,9 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var remoteCall: RemoteCallStatus?
     @Published private(set) var callStatus: String?
     @Published private(set) var pingStatus: String?
+    let quickActions = QuickActions()
+    let mediaController = MediaController()
+    let shortcuts = ShortcutSettings()
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -201,8 +204,6 @@ final class PairingCoordinator: ObservableObject {
     private var heartbeatWorkItem: DispatchWorkItem?
     private var lastTrustedEndpoint: (host: String, port: Int, name: String)?
     private var reconnectAttempt = 0
-    private var clipboardHotKey: GlobalHotKey?
-    private var callHotKey: GlobalHotKey?
     private var callRequestID: String?
     private var callTimeoutWorkItem: DispatchWorkItem?
     private var callStatusClearWorkItem: DispatchWorkItem?
@@ -270,19 +271,24 @@ final class PairingCoordinator: ObservableObject {
         UNUserNotificationCenter.current().delegate = notificationPresenter
         refreshNotificationAuthorization()
         startListener()
-        clipboardHotKey = GlobalHotKey(
-            keyCode: UInt32(kVK_ANSI_C),
-            modifiers: UInt32(controlKey | optionKey)
-        ) { [weak self] in
-            self?.sendClipboard()
+        quickActions.available = { [weak self] in self?.isFeatureAvailable($0) == true }
+        quickActions.send = { [weak self] in self?.sendQuickPayload(kind: $0, payload: $1) == true }
+        mediaController.allowed = { [weak self] in
+            guard let self, case .connected = self.state else { return false }
+            return self.isFeatureAvailable(.media)
         }
-        callHotKey = GlobalHotKey(
-            keyCode: UInt32(kVK_ANSI_P),
-            modifiers: UInt32(controlKey | optionKey),
-            identifier: 2
-        ) { [weak self] in
-            self?.sendCallFromClipboard()
+        mediaController.onState = { [weak self] in
+            _ = self?.sendQuickPayload(kind: "media.state", payload: $0)
         }
+        shortcuts.perform = { [weak self] action in
+            switch action {
+            case .clipboard: self?.sendClipboard()
+            case .call: self?.sendCallFromClipboard()
+            case .link: self?.quickActions.sendClipboardLink()
+            case .ping: self?.sendPing()
+            }
+        }
+        shortcuts.register()
         settingsCancellable = Publishers.CombineLatest3(
             settings.$globalFeatures,
             settings.$deviceFeatures,
@@ -294,6 +300,8 @@ final class PairingCoordinator: ObservableObject {
                     guard let self else { return }
                     if !self.featureEnabled(.battery) { self.remoteBattery = nil }
                     if !self.featureEnabled(.ping) { self.clearPingStatus() }
+                    if !self.isFeatureAvailable(.links) { self.quickActions.reset() }
+                    self.mediaController.reset()
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     if !self.featureEnabled(.notifications) { self.clearRemoteCall() }
                     if !self.featureEnabled(.calls) {
@@ -306,6 +314,7 @@ final class PairingCoordinator: ObservableObject {
                         self.clearNotificationHistory()
                     }
                     self.sendFeatureState()
+                    self.mediaController.refresh()
                     self.publishLocalBattery(force: true)
                 }
             }
@@ -379,6 +388,8 @@ final class PairingCoordinator: ObservableObject {
         session = current
         remoteBattery = nil
         clearPingStatus()
+        quickActions.reset()
+        mediaController.reset()
         lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
@@ -434,6 +445,8 @@ final class PairingCoordinator: ObservableObject {
         clearCallStatus()
         clearClipboardSendStatus()
         clearPingStatus()
+        quickActions.reset()
+        mediaController.reset()
         lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
@@ -454,6 +467,8 @@ final class PairingCoordinator: ObservableObject {
         clearCallStatus()
         clearClipboardSendStatus()
         clearPingStatus()
+        quickActions.reset()
+        mediaController.reset()
         lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
@@ -715,6 +730,42 @@ final class PairingCoordinator: ObservableObject {
         pingStatusClearWorkItem?.cancel()
         pingStatusClearWorkItem = nil
         pingStatus = nil
+    }
+
+    private func sendQuickPayload(kind: String, payload: [String: Any]) -> Bool {
+        guard let current = session, case .connected = state, let key = current.pairingKey,
+              let data = try? JSONSerialization.data(withJSONObject: payload), data.count <= 32768,
+              let encrypted = try? encrypt(data, key: key) else { return false }
+        current.send(PairingMessage(kind: kind, sessionId: current.id,
+            messageId: UUID().uuidString.lowercased(), nonce: encrypted.nonce, ciphertext: encrypted.ciphertext))
+        return true
+    }
+
+    private func receiveQuickPayload(_ message: PairingMessage, current: Session) {
+        guard session === current, case .connected = state, message.sessionId == current.id,
+              let key = current.pairingKey, let id = message.messageId, current.acceptMessageID(id),
+              let nonce = message.nonce, let ciphertext = message.ciphertext,
+              let data = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: key), data.count <= 8192,
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              payload["version"] as? Int == 1 else { return }
+        if message.kind == "quick.request" {
+            guard let feature = payload["feature"] as? String, let sequence = payload["sequence"] as? Int,
+                  current.quickSequence.accept(feature: feature, sequence: sequence) else { return }
+        }
+        if message.kind == "quick.request", payload["feature"] as? String == "media" {
+            guard let requestID = payload["requestId"] as? String, UUID(uuidString: requestID) != nil else { return }
+            let reply: (Bool) -> Void = { [weak self, weak current] accepted in
+                guard let self, let current, self.session === current else { return }
+                _ = self.sendQuickPayload(kind: "quick.result", payload: [
+                    "version": 1, "requestId": requestID, "feature": "media", "accepted": accepted
+                ])
+            }
+            guard isFeatureAvailable(.media), let action = payload["action"] as? String,
+                  let value = payload["value"] as? String else { reply(false); return }
+            mediaController.command(action: action, value: value, completion: reply)
+        } else {
+            quickActions.receive(message.kind, payload: payload)
+        }
     }
 
     private func publishLocalBattery(force: Bool = false) {
@@ -1037,6 +1088,8 @@ final class PairingCoordinator: ObservableObject {
         session = current
         remoteBattery = nil
         clearPingStatus()
+        quickActions.reset()
+        mediaController.reset()
         lastSentBattery = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
@@ -1065,6 +1118,8 @@ final class PairingCoordinator: ObservableObject {
                 self.session = nil
                 self.remoteBattery = nil
                 self.clearPingStatus()
+                self.quickActions.reset()
+                self.mediaController.reset()
                 self.lastSentBattery = nil
                 self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
@@ -1093,6 +1148,8 @@ final class PairingCoordinator: ObservableObject {
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
                     self.clearPingStatus()
+                    self.quickActions.reset()
+                    self.mediaController.reset()
                     self.lastSentBattery = nil
                     self.clearRemoteCall()
                     self.remoteFeatureStateReceived = false
@@ -1110,6 +1167,8 @@ final class PairingCoordinator: ObservableObject {
     private func receive(_ message: PairingMessage, in current: Session) {
         do {
             switch message.kind {
+            case "quick.request", "quick.result":
+                receiveQuickPayload(message, current: current)
             case "heartbeat.ping":
                 guard message.sessionId == current.id, case .connected = state else { return }
                 current.heartbeatSupported = true
@@ -1189,6 +1248,9 @@ final class PairingCoordinator: ObservableObject {
                     ($0, payload.features[$0.rawValue] ?? false)
                 })
                 remoteFeatureStateReceived = true
+                if !isFeatureAvailable(.links) { quickActions.reset() }
+                mediaController.reset()
+                mediaController.refresh()
                 if remoteFeatures[.battery] == false { remoteBattery = nil }
                 if remoteFeatures[.ping] == false { clearPingStatus() }
                 if remoteFeatures[.clipboard] == false { clearClipboardSendStatus() }
@@ -1673,6 +1735,7 @@ final class PairingCoordinator: ObservableObject {
                 messageId: UUID().uuidString.lowercased()
             ))
             self.publishLocalBattery()
+            self.mediaController.refresh()
             self.scheduleHeartbeat(for: current)
         }
         heartbeatWorkItem = work
@@ -1745,6 +1808,7 @@ final class PairingCoordinator: ObservableObject {
             type: callType,
             actions: actions
         )
+        mediaController.callChanged(active: ["incoming", "ongoing"].contains(callType))
         if hiddenCallOverlayIdentity != identity {
             callOverlayWindow.show()
         }
@@ -1899,6 +1963,7 @@ final class PairingCoordinator: ObservableObject {
 
     private func removeRemoteNotification(_ notificationID: String, deviceID: String) {
         if remoteCall?.notificationID == notificationID && remoteCall?.deviceID == deviceID {
+            mediaController.callChanged(active: false)
             remoteCall = nil
             callOverlayWindow.hide()
             hiddenCallOverlayIdentity = nil
@@ -1912,6 +1977,7 @@ final class PairingCoordinator: ObservableObject {
     }
 
     private func clearRemoteCall() {
+        mediaController.callChanged(active: false)
         guard let call = remoteCall else { return }
         remoteCall = nil
         callOverlayWindow.hide()
@@ -1963,6 +2029,7 @@ private final class Session {
     var onFailure: (() -> Void)?
     private var buffer = Data()
     private var seenMessageIDs = Set<String>()
+    var quickSequence = QuickRequestSequence()
 
     init(connection: NWConnection, peerName: String) {
         self.connection = connection

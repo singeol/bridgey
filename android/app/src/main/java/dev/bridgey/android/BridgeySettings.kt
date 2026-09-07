@@ -12,11 +12,13 @@ enum class BridgeyFeature(val key: String, val title: String) {
     BATTERY("battery", "Battery status"),
     FIND_DEVICE("find_device", "Find Device"),
     PING("ping", "Ping"),
+    LINKS("links", "Web links"),
+    MEDIA("media", "Mac media controls"),
     CALLS("calls", "Calls from Mac"),
 }
 
 internal fun featureEnabledByLegacyPeer(feature: BridgeyFeature): Boolean =
-    feature != BridgeyFeature.CALLS && feature != BridgeyFeature.PING
+    feature !in setOf(BridgeyFeature.CALLS, BridgeyFeature.PING, BridgeyFeature.LINKS, BridgeyFeature.MEDIA)
 
 data class BridgeySettingsState(
     val deviceName: String,

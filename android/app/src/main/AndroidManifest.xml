@@ -61,10 +61,17 @@
             android:exported="false"
             android:noHistory="true"
             android:taskAffinity="" />
+        <activity android:name=".ConfirmCallActivity" android:exported="false"
+            android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="" />
         <service
             android:name=".BridgeyConnectionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <service android:name=".ClipboardTileService" android:exported="true"
+            android:label="Bridgey clipboard" android:icon="@drawable/ic_bridgey_notification"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <service
             android:name=".BridgeyNotificationListenerService"
             android:exported="false"

@@ -9,6 +9,8 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
     case battery
     case findDevice = "find_device"
     case ping
+    case links
+    case media
     case calls
 
     var id: String { rawValue }
@@ -20,13 +22,15 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
         case .battery: "Battery status"
         case .findDevice: "Find Device"
         case .ping: "Ping"
+        case .links: "Web links"
+        case .media: "Media controls"
         case .calls: "Calls from Mac"
         }
     }
 }
 
 func featureEnabledByLegacyPeer(_ feature: BridgeyFeature) -> Bool {
-    feature != .calls && feature != .ping
+    ![.calls, .ping, .links, .media].contains(feature)
 }
 
 func effectiveFeatureEnabled(globalEnabled: Bool, deviceEnabled: Bool?) -> Bool {
@@ -71,7 +75,7 @@ final class BridgeySettings: ObservableObject {
         hasCompletedOnboarding = storedDefaults.bool(forKey: "settings.onboarding.completed")
         notificationHistoryEnabled = storedDefaults.bool(forKey: "settings.notificationHistory.enabled")
         globalFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
-            ($0, storedDefaults.object(forKey: "settings.global.\($0.rawValue)") as? Bool ?? true)
+            ($0, storedDefaults.object(forKey: "settings.global.\($0.rawValue)") as? Bool ?? ($0 != .media))
         })
         var perDevice: [String: [BridgeyFeature: Bool]] = [:]
         for (key, value) in storedDefaults.dictionaryRepresentation() where key.hasPrefix("settings.device.") {

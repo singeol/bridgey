@@ -103,6 +103,7 @@ class PairingCoordinator(
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val quickActions = QuickActions(appContext, scope, ::isFeatureAvailable, ::sendQuickPayload)
     private val mutableState = MutableStateFlow<PairingState>(PairingState.Idle)
     val state: StateFlow<PairingState> = mutableState.asStateFlow()
     private val identity = AndroidIdentity(context.applicationContext)
@@ -151,6 +152,7 @@ class PairingCoordinator(
                 if (!featureEnabled(BridgeyFeature.CLIPBOARD)) mutableClipboardStatus.value = null
                 if (!featureEnabled(BridgeyFeature.BATTERY)) mutableRemoteBattery.value = null
                 if (!featureEnabled(BridgeyFeature.PING)) clearPingStatus()
+                quickActions.policyChanged()
                 sendFeatureState()
             }
         }
@@ -195,6 +197,7 @@ class PairingCoordinator(
         mutableMacRinging.value = false
         mutableRemoteBattery.value = null
         clearPingStatus()
+        quickActions.reset()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -207,6 +210,7 @@ class PairingCoordinator(
         mutableMacRinging.value = false
         mutableRemoteBattery.value = null
         clearPingStatus()
+        quickActions.reset()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -352,22 +356,24 @@ class PairingCoordinator(
         val messageId = UUID.randomUUID().toString()
         val encrypted = Crypto.encrypt(current.pairingKey!!, JSONObject().put("version", 1).toString().toByteArray())
         pendingPingId = messageId
-        if (!current.send(
-                Message(
-                    kind = "ping.request",
-                    sessionId = current.id,
-                    messageId = messageId,
-                    nonce = encrypted.nonce,
-                    ciphertext = encrypted.ciphertext,
-                ),
-            )
-        ) {
-            pendingPingId = null
-            mutablePingStatus.value = "Ping could not be sent"
-            return
-        }
         mutablePingStatus.value = "Pinging Mac…"
         scope.launch {
+            if (session !== current || !current.send(
+                    Message(
+                        kind = "ping.request",
+                        sessionId = current.id,
+                        messageId = messageId,
+                        nonce = encrypted.nonce,
+                        ciphertext = encrypted.ciphertext,
+                    ),
+                )
+            ) {
+                if (pendingPingId == messageId) {
+                    pendingPingId = null
+                    mutablePingStatus.value = "Ping could not be sent"
+                }
+                return@launch
+            }
             delay(5_000)
             if (pendingPingId == messageId) {
                 pendingPingId = null
@@ -403,6 +409,38 @@ class PairingCoordinator(
     private fun clearPingStatus() {
         pendingPingId = null
         mutablePingStatus.value = null
+    }
+
+    private fun sendQuickPayload(kind: String, payload: JSONObject): Boolean {
+        val current = session ?: return false
+        val key = current.pairingKey ?: return false
+        if (mutableState.value !is PairingState.Connected) return false
+        val encrypted = Crypto.encrypt(key, payload.toString().toByteArray(Charsets.UTF_8))
+        scope.launch {
+            if (session === current) current.send(Message(kind = kind, sessionId = current.id,
+                messageId = UUID.randomUUID().toString(), nonce = encrypted.nonce, ciphertext = encrypted.ciphertext))
+        }
+        return true
+    }
+
+    private fun receiveQuickPayload(current: Session, message: Message) {
+        if (session !== current || mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val key = current.pairingKey ?: return
+        val id = message.messageId ?: return
+        if (!current.acceptMessageId(id)) return
+        val data = Crypto.decrypt(key, message.nonce ?: return, message.ciphertext ?: return) ?: return
+        if (data.size > if (message.kind == "media.state") 32768 else 8192) return
+        val payload = runCatching { JSONObject(data.toString(Charsets.UTF_8)) }.getOrNull() ?: return
+        if (message.kind == "quick.request") {
+            val raw = payload.opt("sequence")
+            val sequence = when (raw) {
+                is Int -> raw.toLong()
+                is Long -> raw
+                else -> return
+            }
+            if (!current.quickSequence.accept(payload.optString("feature"), sequence)) return
+        }
+        quickActions.receive(message.kind, payload)
     }
 
     fun sendNotification(
@@ -782,6 +820,7 @@ class PairingCoordinator(
         mutableMacRinging.value = false
         mutableRemoteBattery.value = null
         clearPingStatus()
+        quickActions.reset()
         mutableRemoteFeatures.value = defaultFeatureState()
         server?.close()
         server = null
@@ -812,6 +851,7 @@ class PairingCoordinator(
         session = current
         mutableRemoteBattery.value = null
         clearPingStatus()
+        quickActions.reset()
         mutableRemoteFeatures.value = defaultFeatureState()
         if (initiatedLocally) {
             current.peerName = peerHint ?: "Mac"
@@ -863,6 +903,7 @@ class PairingCoordinator(
             mutableMacRinging.value = false
             mutableRemoteBattery.value = null
             clearPingStatus()
+            quickActions.reset()
             mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
             diagnostics.record("transport", "disconnected", "reconnecting")
@@ -877,6 +918,7 @@ class PairingCoordinator(
 
     private fun receive(current: Session, message: Message) {
         when (message.kind) {
+            "quick.request", "quick.result", "media.state" -> receiveQuickPayload(current, message)
             "heartbeat.ping" -> {
                 if (message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
                 current.heartbeatSupported = true
@@ -967,6 +1009,7 @@ class PairingCoordinator(
             "find.stopped" -> receiveFindAcknowledgement(current, message, started = false)
             "ping.request" -> receivePing(current, message)
             "ping.ack" -> {
+                if (session !== current || message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
                 val messageId = message.messageId ?: return
                 if (pendingPingId == messageId) {
                     pendingPingId = null
@@ -1365,6 +1408,7 @@ class PairingCoordinator(
             values.getBoolean(feature.key)
         }
         mutableRemoteFeatures.value = received
+        quickActions.policyChanged()
         if (received[BridgeyFeature.CLIPBOARD] == false) mutableClipboardStatus.value = null
         if (received[BridgeyFeature.BATTERY] == false) mutableRemoteBattery.value = null
         if (received[BridgeyFeature.PING] == false) clearPingStatus()
@@ -1398,6 +1442,7 @@ class PairingCoordinator(
         cancelIncomingFiles()
         mutableRemoteBattery.value = null
         clearPingStatus()
+        quickActions.reset()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
         refreshFileTransferSummary("File transfer interrupted")
@@ -1463,6 +1508,8 @@ class PairingCoordinator(
         }
 
         fun close() = runCatching { socket.close() }.let { Unit }
+
+        val quickSequence = QuickRequestSequence()
 
         @Synchronized fun acceptMessageId(id: String): Boolean {
             if (!seenMessageIds.add(id)) return false

@@ -24,7 +24,22 @@ Security goals are mutual peer authentication, confidentiality and integrity in
 transit, visible first-pairing consent, replay-resistant side effects, least
 plugin privilege, and complete revocation of local trust.
 
-## Design
+## Current transport and planned hardening
+
+The native 0.5/0.6 clients use bounded newline-delimited JSON over TCP and
+application-layer AES-GCM for feature payloads. They do **not** currently use
+TLS or WebSockets. Ephemeral P-256 ECDH/HKDF establishes a session key; HMAC
+confirmation and signed transcripts bind the stored long-term peer identity.
+Routing headers and some acknowledgement/heartbeat messages are not encrypted.
+Replay caches are bounded and session-local. This is not a claim of independent
+cryptographic audit or a complete active-network-attacker defense.
+
+The following items describe the target security design; in particular TLS,
+persistent replay handling, authenticated key rotation, and comprehensive
+resource/rate limits are not all implemented. See the current-wire section of
+`docs/protocol.md` and automated coverage in `docs/security-testing.md`.
+
+## Target design
 
 - Generate a long-term P-256 signing/authentication key per installation using
   Android Keystore or macOS Keychain/Secure Enclave where available. Private
@@ -65,8 +80,10 @@ all pairings.
 ## Privacy defaults
 
 There is no telemetry, advertising identifier, account, cloud relay, or remote
-analytics. LAN features communicate directly between paired devices. Plugins
-are off until their OS permission and per-peer capability are granted. Bridgey
+analytics. LAN features communicate directly between paired devices. Sensitive
+OS access requires explicit permission. Global and per-device switches gate
+feature execution; permission-light features default on. Mac media control
+defaults off and requires a locally selected player and Automation consent. Bridgey
 does not weaken platform background/privacy controls to obtain clipboard or
 notification data.
 

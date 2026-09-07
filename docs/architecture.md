@@ -2,6 +2,12 @@
 
 ## Decisions
 
+**Implementation note (0.6):** the WebSocket/TLS transport and generalized plugin
+boundaries below describe the target architecture. Current clients use native
+TCP sockets with newline JSON and application-layer AES-GCM feature payloads;
+the coordinator owns routing. Refer to the current-wire section of
+`docs/protocol.md` for implemented behavior, not the planned transport below.
+
 Bridgey is a monorepo with native clients and a platform-neutral protocol. The
 first transport is a persistent WebSocket over TLS; mDNS only supplies changing
 LAN endpoints. Plugin APIs depend on a small transport abstraction so QUIC can
