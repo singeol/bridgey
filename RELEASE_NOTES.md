@@ -1,36 +1,58 @@
-# Bridgey v0.5.0-alpha.12
+# Bridgey v0.5.0
 
-This patch preview fixes repeated Android Share launches and improves the
-documentation experience on phones and tablets.
+Bridgey 0.5 is the first complete notifications and communication milestone for
+the local-first Android and macOS companion. It promotes the tested 0.5 alpha
+series to a regular release and includes the final mobile and Android Share
+fixes from alpha.12.
 
-## Changes since alpha.11
+## Highlights
 
-- Reuse the existing Bridgey task when files, photos, or text are shared from
-  another Android application instead of accumulating multiple Bridgey windows
-  in Recents.
-- Deliver every subsequent Share request to the active `MainActivity` so the
-  newest file or text still reaches the confirmation dialog when Bridgey is
-  already open or running in the background.
-- Explicitly reject Android document-task launch flags for Bridgey's main
-  activity and add a regression test for the required manifest configuration.
-- Replace the documentation grid with a stable single-column layout on phones
-  and tablets.
-- Improve mobile documentation typography, spacing, cards, permission rows,
-  buttons, and wrapping of long filenames, code, and reference links.
-- Verify that the documentation has no horizontal overflow at a 390 px mobile
-  viewport.
+- Mirror Android notifications as native macOS notifications over the encrypted
+  local connection.
+- Use exposed notification action buttons and inline replies from the Mac.
+- Synchronize notification dismissal, filter forwarding per Android app, and
+  review a private local notification history.
+- Start a validated cellular call from selected macOS text, the clipboard, the
+  Bridgey panel, or a browser `tel:` link.
+- See live incoming, outgoing, and active call state on macOS with explicit
+  Answer, Decline, and Hang Up controls when optional Phone access is enabled.
+- Share text, photos, and files through Android's Share menu without accumulating
+  multiple Bridgey windows in Recents.
+- Transfer files in either direction with progress, speed, ETA, verification,
+  per-transfer notifications, and synchronized cancellation.
+- Synchronize the clipboard, battery state, feature availability, and Find
+  Device controls between trusted devices.
 
-## Test focus
+## Reliability, privacy, and experience
 
-- Share several photos or files to Bridgey one after another and confirm that
-  Android Recents contains only one Bridgey window.
-- Repeat while Bridgey is foregrounded, backgrounded, and absent from Recents.
-- Confirm that every Share request opens the correct confirmation dialog and
-  transfers the selected item after approval.
-- Check [the documentation](https://bridgey.ai/docs/) on a narrow phone screen,
-  including Files, Permissions, Build from source, and the final download card.
-- Smoke-test reconnect, clipboard, regular file selection, notifications,
-  Find Device, battery status, and call controls.
+- Pair with a verification code and reconnect through TLS WebSockets with
+  public-key pinning; discovery metadata is always treated as untrusted.
+- Keep sensitive functionality opt-in with synchronized global and per-device
+  feature controls.
+- Export bounded diagnostics without clipboard text, notification contents,
+  filenames, network addresses, or persistent identifiers.
+- Add regression coverage for pairing, protocol crypto, reconnects, malformed
+  messages, file cancellation, notification actions, call lifecycles, Android
+  permissions, and Share task reuse.
+- Adopt a unified Bridgey `B` identity across Android, macOS, notifications, and
+  the web.
+- Publish the project website, mobile-friendly documentation, security material,
+  release instructions, and the roadmap through 1.0 at
+  [bridgey.ai](https://bridgey.ai/).
+
+## Upgrade and test focus
+
+- Install over an existing 0.5 alpha and confirm that device trust and settings
+  remain intact.
+- Restart either client and verify automatic reconnect, then test clipboard and
+  one file in each direction.
+- Share several photos to Bridgey consecutively and confirm Android Recents
+  contains a single Bridgey window.
+- Test notification display, an action or inline reply, dismissal sync, and an
+  application filter.
+- Test incoming and outgoing calls, Answer, Decline, Hang Up, and automatic call
+  panel dismissal.
+- Test battery status and Find Device in both directions.
 
 ## Downloads
 
@@ -41,11 +63,16 @@ documentation experience on phones and tablets.
 
 ## Known limitations
 
-- Full call status and controls require explicit Android Phone permissions;
-  confirmation mode remains available without that opt-in.
+- Bridgey currently requires both devices to be reachable on the same local
+  network; accounts and an optional relay are planned for later evaluation.
+- Call status and controls can vary between Android vendors. Direct controls
+  require explicit Android Phone permissions; confirmation mode remains
+  available without that opt-in.
 - Bridgey does not read contacts, SMS history, or call logs.
-- Both devices must be reachable on the same local network.
 - The macOS build remains ad-hoc signed and is not notarized until Developer ID
-  credentials are configured.
+  credentials are configured, so macOS can show an unidentified-developer
+  warning on first launch.
+- Bridgey remains pre-1.0 software; the protocol compatibility freeze and full
+  supported-device matrix are planned for 1.0.
 
 Built with the assistance of [OpenAI Codex](https://openai.com/codex/).
