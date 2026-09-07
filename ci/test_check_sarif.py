@@ -35,3 +35,12 @@ class SecurityGateTests(unittest.TestCase):
         data["runs"][0]["invocations"] = [{"executionSuccessful": False}]
         with self.assertRaises(ValueError):
             blocking_findings(data)
+
+    def test_codeql_query_pack_extension_severity_is_enforced(self):
+        data = report("8.2")
+        tool = data["runs"][0]["tool"]
+        tool["extensions"] = [{"name": "codeql/java-queries", "rules": tool["driver"].pop("rules")}]
+        # Severity is not dependent on the optional result-level field.
+        self.assertEqual(blocking_findings(data), ["test/rule"])
+        data["runs"][0]["results"] = [{"rule": {"index": 0, "toolComponent": {"index": 0}}}]
+        self.assertEqual(blocking_findings(data), ["test/rule"])

@@ -14,15 +14,25 @@ def blocking_findings(report):
     for run in runs:
         if any(item.get("executionSuccessful") is False for item in run.get("invocations", [])):
             raise ValueError("SARIF reports an unsuccessful analysis")
-        rules = run["tool"]["driver"].get("rules", [])
+        tool = run["tool"]
+        rules = tool["driver"].get("rules", [])
+        extensions = tool.get("extensions", [])
+        # CodeQL query packs store rule metadata in extensions, not the driver.
+        rules = rules + [rule for component in extensions for rule in component.get("rules", [])]
         by_id = {rule["id"]: rule for rule in rules}
         if not isinstance(run.get("results"), list):
             raise ValueError("SARIF has no results array")
         for finding in run["results"]:
-            rule = by_id.get(finding.get("ruleId"), {})
+            reference = finding.get("rule", {})
+            rule = by_id.get(finding.get("ruleId", reference.get("id")), {})
             index = finding.get("ruleIndex")
-            if not rule and isinstance(index, int) and 0 <= index < len(rules):
-                rule = rules[index]
+            indexed_rules = tool["driver"].get("rules", [])
+            component = reference.get("toolComponent", {}).get("index")
+            if isinstance(component, int) and 0 <= component < len(extensions):
+                indexed_rules = extensions[component].get("rules", [])
+                index = reference.get("index")
+            if not rule and isinstance(index, int) and 0 <= index < len(indexed_rules):
+                rule = indexed_rules[index]
             score = rule.get("properties", {}).get("security-severity")
             if score is not None:
                 score = float(score)
