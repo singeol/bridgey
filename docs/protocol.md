@@ -76,11 +76,11 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, `find_device`, and `calls`. A UI action is available
-only when both peers report the corresponding feature as enabled. Clients
+`notifications`, `battery`, `find_device`, `ping`, and `calls`. A UI action is
+available only when both peers report the corresponding feature as enabled. Clients
 predating this message are treated as enabling the original v1 features for
-compatibility; the later `calls` feature is disabled unless a peer advertises
-it explicitly.
+compatibility; the later `calls` and `ping` features are disabled unless a peer
+advertises them explicitly.
 
 ## Pairing flow
 
@@ -106,8 +106,10 @@ requirements are in `SECURITY.md`.
 
 ### Battery (`battery.send.v1`)
 
-Android sends `battery.update` after a secure session is established and when
-the system reports a battery-state change:
+Either battery-powered peer sends `battery.update` after a secure session is
+established and when its battery state changes. Android uses system battery
+broadcasts; macOS checks its public IOKit power-source state on connection and
+while the heartbeat is active:
 
 ```json
 {
@@ -230,6 +232,17 @@ Android presents a separate ongoing find-device notification with a Stop
 action while its alert is active. Stopping from that action, from either app,
 or disconnecting stops the local alert; find-device state is never persisted
 across sessions.
+
+### Ping (`ping.v1`)
+
+`ping.request` is a lightweight, one-shot presence alert and is intentionally
+separate from Find Device. It carries an encrypted `{ "version": 1 }` payload,
+uses a unique replay-protected message ID, and causes the receiving device to
+play one short system sound. Android also shows a short local toast. The
+receiver returns `ping.ack` with the request message ID, so the sender reports
+delivery or a bounded five-second timeout instead of leaving an indefinite
+status. Ping never starts a repeating sound and has no state to restore after a
+disconnect.
 
 ### Calls from Mac (`calls.v1`)
 

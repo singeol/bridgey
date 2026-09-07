@@ -8,6 +8,7 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
     case notifications
     case battery
     case findDevice = "find_device"
+    case ping
     case calls
 
     var id: String { rawValue }
@@ -18,9 +19,14 @@ enum BridgeyFeature: String, CaseIterable, Identifiable {
         case .notifications: "Android notifications"
         case .battery: "Battery status"
         case .findDevice: "Find Device"
+        case .ping: "Ping"
         case .calls: "Calls from Mac"
         }
     }
+}
+
+func featureEnabledByLegacyPeer(_ feature: BridgeyFeature) -> Bool {
+    feature != .calls && feature != .ping
 }
 
 func effectiveFeatureEnabled(globalEnabled: Bool, deviceEnabled: Bool?) -> Bool {

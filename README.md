@@ -80,8 +80,8 @@ the stable release.
 - [ ] Show bounded now-playing metadata and artwork where public platform APIs allow it
 - [ ] Optionally pause or mute media while a phone call is ringing or active
 - [ ] Send and explicitly open web links in either direction
-- [ ] Add a lightweight Ping action separate from Find Device
-- [ ] Show Mac battery status on Android
+- [x] Add a lightweight Ping action separate from Find Device
+- [x] Show Mac battery status on Android
 - [ ] Add an Android Quick Settings tile and configurable macOS shortcuts
 - [ ] Complete multi-OEM stabilization of the v0.5 call and notification lifecycle
 

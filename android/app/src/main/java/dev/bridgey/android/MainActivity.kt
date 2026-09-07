@@ -316,6 +316,8 @@ private fun BridgeyApp(
     val fileTransfers by pairing.fileTransfers.collectAsStateWithLifecycle()
     val phoneRinging by pairing.phoneRinging.collectAsStateWithLifecycle()
     val macRinging by pairing.macRinging.collectAsStateWithLifecycle()
+    val remoteBattery by pairing.remoteBattery.collectAsStateWithLifecycle()
+    val pingStatus by pairing.pingStatus.collectAsStateWithLifecycle()
     val trustedDevices by pairing.trustedDevices.collectAsStateWithLifecycle()
     val remoteFeatures by pairing.remoteFeatures.collectAsStateWithLifecycle()
     val settingsState by settings.state.collectAsStateWithLifecycle()
@@ -387,6 +389,8 @@ private fun BridgeyApp(
                 fileTransfers = fileTransfers,
                 phoneRinging = phoneRinging,
                 macRinging = macRinging,
+                remoteBattery = remoteBattery,
+                pingStatus = pingStatus,
                 enabledFeatures = BridgeyFeature.entries.associateWith { feature ->
                     settings.isEnabled(feature, (pairingState as? PairingState.Connected)?.deviceId) &&
                         remoteFeatures[feature] != false
@@ -713,6 +717,8 @@ private fun DeviceScreen(
     fileTransfers: Map<String, FileTransferState>,
     phoneRinging: Boolean,
     macRinging: Boolean,
+    remoteBattery: RemoteBatteryStatus?,
+    pingStatus: String?,
     enabledFeatures: Map<BridgeyFeature, Boolean>,
     pairing: PairingCoordinator,
     appNotificationsEnabled: Boolean,
@@ -736,13 +742,17 @@ private fun DeviceScreen(
                     clipboardStatus = clipboardStatus,
                     phoneRinging = phoneRinging,
                     macRinging = macRinging,
+                    remoteBattery = remoteBattery,
+                    pingStatus = pingStatus,
                     clipboardEnabled = enabledFeatures[BridgeyFeature.CLIPBOARD] != false,
                     filesEnabled = enabledFeatures[BridgeyFeature.FILES] != false,
                     findEnabled = enabledFeatures[BridgeyFeature.FIND_DEVICE] != false,
+                    pingEnabled = enabledFeatures[BridgeyFeature.PING] != false,
                     onClipboard = pairing::sendClipboard,
                     onFile = { filePicker.launch(arrayOf("*/*")) },
                     onRing = pairing::findMac,
                     onStopRing = pairing::stopFinding,
+                    onPing = pairing::sendPing,
                 )
             }
         } else {
@@ -820,13 +830,17 @@ private fun ConnectedDeviceCard(
     clipboardStatus: String?,
     phoneRinging: Boolean,
     macRinging: Boolean,
+    remoteBattery: RemoteBatteryStatus?,
+    pingStatus: String?,
     clipboardEnabled: Boolean,
     filesEnabled: Boolean,
     findEnabled: Boolean,
+    pingEnabled: Boolean,
     onClipboard: () -> Unit,
     onFile: () -> Unit,
     onRing: () -> Unit,
     onStopRing: () -> Unit,
+    onPing: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -844,11 +858,22 @@ private fun ConnectedDeviceCard(
                         Box(Modifier.size(8.dp).background(Color(0xFF2EAD69), CircleShape))
                         Text("Connected securely", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f))
                     }
+                    remoteBattery?.let { battery ->
+                        Text(
+                            "Mac battery ${battery.level}%${if (battery.isCharging) " · Charging" else ""}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
+                        )
+                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (clipboardEnabled || filesEnabled) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (clipboardEnabled) QuickAction("Clipboard", "Copy", Modifier.weight(1f), onClipboard)
                 if (filesEnabled) QuickAction("File", "Send", Modifier.weight(1f), onFile)
+                if (clipboardEnabled.xor(filesEnabled)) Spacer(Modifier.weight(1f))
+            }
+            if (pingEnabled || findEnabled) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (pingEnabled) QuickAction("Ping", "Mac", Modifier.weight(1f), onPing)
                 if (findEnabled) {
                     QuickAction(
                         if (phoneRinging || macRinging) "Stop" else "Ring",
@@ -857,11 +882,13 @@ private fun ConnectedDeviceCard(
                         if (phoneRinging || macRinging) onStopRing else onRing,
                     )
                 }
+                if (pingEnabled.xor(findEnabled)) Spacer(Modifier.weight(1f))
             }
-            if (!clipboardEnabled && !filesEnabled && !findEnabled) {
+            if (!clipboardEnabled && !filesEnabled && !findEnabled && !pingEnabled) {
                 Text("Quick actions are turned off in Settings on one of your devices.", style = MaterialTheme.typography.bodySmall)
             }
             clipboardStatus?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f)) }
+            pingStatus?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f)) }
         }
     }
 }

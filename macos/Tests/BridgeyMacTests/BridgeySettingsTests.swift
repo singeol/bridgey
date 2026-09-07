@@ -18,4 +18,11 @@ final class BridgeySettingsTests: XCTestCase {
         XCTAssertFalse(effectiveFeatureAvailable(localEnabled: true, remoteEnabled: false))
         XCTAssertFalse(effectiveFeatureAvailable(localEnabled: false, remoteEnabled: true))
     }
+
+
+    func testNewerFeaturesAreOffForLegacyPeers() {
+        XCTAssertFalse(featureEnabledByLegacyPeer(.calls))
+        XCTAssertFalse(featureEnabledByLegacyPeer(.ping))
+        XCTAssertTrue(featureEnabledByLegacyPeer(.battery))
+    }
 }

@@ -7,6 +7,8 @@ import android.content.ContentValues
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.MediaStore
 import android.os.SystemClock
@@ -90,6 +92,8 @@ data class FileTransferState(
 
 data class TrustedDevice(val id: String, val name: String)
 
+data class RemoteBatteryStatus(val level: Int, val isCharging: Boolean)
+
 class PairingCoordinator(
     context: Context,
     private val localDeviceId: String,
@@ -121,6 +125,11 @@ class PairingCoordinator(
     val phoneRinging: StateFlow<Boolean> = mutablePhoneRinging.asStateFlow()
     private val mutableMacRinging = MutableStateFlow(false)
     val macRinging: StateFlow<Boolean> = mutableMacRinging.asStateFlow()
+    private val mutableRemoteBattery = MutableStateFlow<RemoteBatteryStatus?>(null)
+    val remoteBattery: StateFlow<RemoteBatteryStatus?> = mutableRemoteBattery.asStateFlow()
+    private val mutablePingStatus = MutableStateFlow<String?>(null)
+    val pingStatus: StateFlow<String?> = mutablePingStatus.asStateFlow()
+    private var pendingPingId: String? = null
     private val mutableRemoteFeatures = MutableStateFlow(defaultFeatureState())
     val remoteFeatures: StateFlow<Map<BridgeyFeature, Boolean>> = mutableRemoteFeatures.asStateFlow()
     private val incomingFiles = ConcurrentHashMap<String, IncomingFileTransfer>()
@@ -140,6 +149,8 @@ class PairingCoordinator(
         scope.launch {
             settings.state.collect {
                 if (!featureEnabled(BridgeyFeature.CLIPBOARD)) mutableClipboardStatus.value = null
+                if (!featureEnabled(BridgeyFeature.BATTERY)) mutableRemoteBattery.value = null
+                if (!featureEnabled(BridgeyFeature.PING)) clearPingStatus()
                 sendFeatureState()
             }
         }
@@ -182,6 +193,8 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteBattery.value = null
+        clearPingStatus()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -192,6 +205,8 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteBattery.value = null
+        clearPingStatus()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -322,6 +337,72 @@ class PairingCoordinator(
                 android.util.Log.i("Bridgey", "PLUGIN battery sent level=$level charging=$isCharging")
             }
         }
+    }
+
+    fun sendPing() {
+        val current = session
+        if (current == null || mutableState.value !is PairingState.Connected) {
+            mutablePingStatus.value = "Mac is not connected"
+            return
+        }
+        if (!isFeatureAvailable(BridgeyFeature.PING)) {
+            mutablePingStatus.value = "Ping requires Bridgey 0.6 on both devices"
+            return
+        }
+        val messageId = UUID.randomUUID().toString()
+        val encrypted = Crypto.encrypt(current.pairingKey!!, JSONObject().put("version", 1).toString().toByteArray())
+        pendingPingId = messageId
+        if (!current.send(
+                Message(
+                    kind = "ping.request",
+                    sessionId = current.id,
+                    messageId = messageId,
+                    nonce = encrypted.nonce,
+                    ciphertext = encrypted.ciphertext,
+                ),
+            )
+        ) {
+            pendingPingId = null
+            mutablePingStatus.value = "Ping could not be sent"
+            return
+        }
+        mutablePingStatus.value = "Pinging Mac…"
+        scope.launch {
+            delay(5_000)
+            if (pendingPingId == messageId) {
+                pendingPingId = null
+                mutablePingStatus.value = "Mac did not acknowledge the ping"
+            }
+        }
+    }
+
+    private fun receivePing(current: Session, message: Message) {
+        if (!featureEnabled(BridgeyFeature.PING, current)) {
+            sendFeatureState()
+            return
+        }
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return fail("Invalid encrypted ping"),
+            message.ciphertext ?: return fail("Invalid encrypted ping"),
+        ) ?: return fail("Invalid encrypted ping")
+        if (runCatching { JSONObject(plaintext.toString(Charsets.UTF_8)).getInt("version") }.getOrNull() != 1) {
+            return fail("Invalid ping")
+        }
+        Handler(Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(appContext, "Ping from ${current.peerName}", android.widget.Toast.LENGTH_SHORT).show()
+            RingtoneManager.getRingtone(appContext, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))?.play()
+        }
+        current.send(Message(kind = "ping.ack", sessionId = current.id, messageId = messageId))
+        android.util.Log.i("Bridgey", "PLUGIN ping received")
+    }
+
+    private fun clearPingStatus() {
+        pendingPingId = null
+        mutablePingStatus.value = null
     }
 
     fun sendNotification(
@@ -699,6 +780,8 @@ class PairingCoordinator(
         current?.close()
         stopPhoneRinging()
         mutableMacRinging.value = false
+        mutableRemoteBattery.value = null
+        clearPingStatus()
         mutableRemoteFeatures.value = defaultFeatureState()
         server?.close()
         server = null
@@ -727,6 +810,8 @@ class PairingCoordinator(
         val current = Session(socket)
         current.initiatedLocally = initiatedLocally
         session = current
+        mutableRemoteBattery.value = null
+        clearPingStatus()
         mutableRemoteFeatures.value = defaultFeatureState()
         if (initiatedLocally) {
             current.peerName = peerHint ?: "Mac"
@@ -776,6 +861,8 @@ class PairingCoordinator(
             cancelIncomingFiles()
             stopPhoneRinging()
             mutableMacRinging.value = false
+            mutableRemoteBattery.value = null
+            clearPingStatus()
             mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
             diagnostics.record("transport", "disconnected", "reconnecting")
@@ -878,6 +965,15 @@ class PairingCoordinator(
             "find.stop" -> receiveFindCommand(current, message, start = false)
             "find.started" -> receiveFindAcknowledgement(current, message, started = true)
             "find.stopped" -> receiveFindAcknowledgement(current, message, started = false)
+            "ping.request" -> receivePing(current, message)
+            "ping.ack" -> {
+                val messageId = message.messageId ?: return
+                if (pendingPingId == messageId) {
+                    pendingPingId = null
+                    mutablePingStatus.value = "Ping delivered"
+                }
+            }
+            "battery.update" -> receiveBattery(current, message)
             "files.accept" -> message.transferId?.let { pendingFileAccepts.remove(it)?.complete(true) }
             "files.complete.ack" -> message.transferId?.let { pendingFileCompletions.remove(it)?.complete(true) }
             "files.offer" -> {
@@ -1262,7 +1358,7 @@ class PairingCoordinator(
         if (payload.optInt("version") != 1) return
         val received = BridgeyFeature.entries.associateWith { feature ->
             if (!values.has(feature.key)) {
-                if (feature == BridgeyFeature.CALLS) return@associateWith false
+                if (!featureEnabledByLegacyPeer(feature)) return@associateWith false
                 return fail("Invalid feature state")
             }
             if (values.opt(feature.key) !is Boolean) return fail("Invalid feature state")
@@ -1270,16 +1366,38 @@ class PairingCoordinator(
         }
         mutableRemoteFeatures.value = received
         if (received[BridgeyFeature.CLIPBOARD] == false) mutableClipboardStatus.value = null
+        if (received[BridgeyFeature.BATTERY] == false) mutableRemoteBattery.value = null
+        if (received[BridgeyFeature.PING] == false) clearPingStatus()
         if (received[BridgeyFeature.FIND_DEVICE] == false) {
             stopPhoneRinging()
             mutableMacRinging.value = false
         }
     }
 
+    private fun receiveBattery(current: Session, message: Message) {
+        if (!featureEnabled(BridgeyFeature.BATTERY, current)) return
+        if (mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val messageId = message.messageId ?: return
+        if (!current.acceptMessageId(messageId)) return
+        val plaintext = Crypto.decrypt(
+            current.pairingKey!!,
+            message.nonce ?: return fail("Invalid encrypted battery status"),
+            message.ciphertext ?: return fail("Invalid encrypted battery status"),
+        ) ?: return fail("Invalid encrypted battery status")
+        val payload = runCatching { JSONObject(plaintext.toString(Charsets.UTF_8)) }.getOrNull()
+            ?: return fail("Invalid battery status")
+        val level = payload.optInt("level", -1)
+        if (level !in 0..100 || payload.opt("isCharging") !is Boolean) return fail("Invalid battery status")
+        mutableRemoteBattery.value = RemoteBatteryStatus(level, payload.getBoolean("isCharging"))
+        android.util.Log.i("Bridgey", "PLUGIN battery received level=$level")
+    }
+
     private fun fail(message: String) {
         session?.close()
         session = null
         cancelIncomingFiles()
+        mutableRemoteBattery.value = null
+        clearPingStatus()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
         refreshFileTransferSummary("File transfer interrupted")
@@ -1306,7 +1424,7 @@ class PairingCoordinator(
     }
 
     private companion object {
-        fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith { it != BridgeyFeature.CALLS }
+        fun defaultFeatureState(): Map<BridgeyFeature, Boolean> = BridgeyFeature.entries.associateWith(::featureEnabledByLegacyPeer)
         const val FILE_CHUNK_SIZE = 24 * 1024
         const val MAX_FILE_SIZE = 10L * 1024 * 1024 * 1024
         const val MAX_NOTIFICATION_ICON_BASE64_LENGTH = 28 * 1024

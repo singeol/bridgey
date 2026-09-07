@@ -197,6 +197,10 @@ private struct BridgeyPanel: View {
                         else { pairing.findAndroid() }
                     }
                 }
+                if pairing.isFeatureAvailable(.ping) {
+                    actionButton("Ping", icon: "wave.3.right") { pairing.sendPing() }
+                        .help("Play a short alert on Android")
+                }
                 if pairing.isFeatureAvailable(.calls) {
                     actionButton("Call", icon: "phone.arrow.up.right") { pairing.sendCallFromClipboard() }
                         .help("Call the phone number currently in the clipboard (⌃⌥P)")
@@ -228,6 +232,7 @@ private struct BridgeyPanel: View {
             if !pairing.isFeatureAvailable(.clipboard) &&
                 !pairing.isFeatureAvailable(.files) &&
                 !pairing.isFeatureAvailable(.findDevice) &&
+                !pairing.isFeatureAvailable(.ping) &&
                 !pairing.isFeatureAvailable(.calls) {
                 Text("Quick actions are turned off in Settings on one of your devices.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -240,6 +245,11 @@ private struct BridgeyPanel: View {
             }
             if let status = pairing.callStatus {
                 Label(status, systemImage: status == "Call started on Android" ? "phone.fill" : "phone.badge.clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let status = pairing.pingStatus {
+                Label(status, systemImage: status == "Ping delivered" ? "checkmark.circle.fill" : "wave.3.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
