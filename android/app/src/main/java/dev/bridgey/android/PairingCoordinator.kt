@@ -433,11 +433,8 @@ class PairingCoordinator(
         val payload = runCatching { JSONObject(data.toString(Charsets.UTF_8)) }.getOrNull() ?: return
         if (message.kind == "quick.request") {
             val raw = payload.opt("sequence")
-            val sequence = when (raw) {
-                is Int -> raw.toLong()
-                is Long -> raw
-                else -> return
-            }
+            if (raw !is Int && raw !is Long) return
+            val sequence = (raw as Number).toLong()
             if (!current.quickSequence.accept(payload.optString("feature"), sequence)) return
         }
         quickActions.receive(message.kind, payload)

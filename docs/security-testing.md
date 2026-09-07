@@ -24,6 +24,11 @@ The project therefore uses layered checks:
 
 ## 0.6 review
 
+- CodeQL SARIF is checked after upload on every analyzed branch/PR: High/Critical
+  security findings or error-level quality results fail the job. A successful
+  scan alone is no longer enough. Missing/failed reports fail closed. The gate
+  has its own unit tests and does not suppress results or disable queries.
+
 - Resolved CodeQL `java/android/implicit-pendingintents`: the immutable call
   confirmation PendingIntent now targets a private, explicit Bridgey activity.
   Only the local tap launches ACTION_DIAL; the fallback does not place a call.
