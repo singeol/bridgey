@@ -14,9 +14,7 @@ func normalizedBatteryStatus(current: Int, maximum: Int, isCharging: Bool) -> Lo
 
 func currentMacBatteryStatus() -> LocalBatteryStatus? {
     let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-    guard let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as? [CFTypeRef] else {
-        return nil
-    }
+    let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as [CFTypeRef]
 
     for source in sources {
         guard let description = IOPSGetPowerSourceDescription(snapshot, source).takeUnretainedValue()
