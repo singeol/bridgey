@@ -51,6 +51,13 @@ private struct BridgeyPanel: View {
     let onOpenSettings: () -> Void
 
     var body: some View {
+        MenuBarPanelSurface {
+            panelContent
+        }
+        .onAppear { pairing.refreshNotificationAuthorization() }
+    }
+
+    private var panelContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(nsImage: NSApp.applicationIconImage)
@@ -81,12 +88,9 @@ private struct BridgeyPanel: View {
 
             if !pairing.fileTransfers.isEmpty {
                 Divider()
-                Button { pairing.showFileTransferWindow() } label: {
-                    Label("File transfers", systemImage: "arrow.left.arrow.right.circle")
-                    Spacer()
-                    Text("\(pairing.fileTransfers.count)").foregroundStyle(.secondary)
+                FileTransfersSummaryButton(count: pairing.fileTransfers.count) {
+                    pairing.showFileTransferWindow()
                 }
-                .buttonStyle(.plain)
             }
 
             Divider()
@@ -104,8 +108,6 @@ private struct BridgeyPanel: View {
             .font(.caption)
         }
         .padding(16)
-        .frame(width: 340)
-        .onAppear { pairing.refreshNotificationAuthorization() }
     }
 
     private var isConnected: Bool {

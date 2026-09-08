@@ -45,6 +45,10 @@ should follow device acceptance, not precede it.
   Stale replies must not revive old state after reconnect.
 - Restart each application, toggle Wi-Fi, lock/unlock Android, background the
   app, and use Turn off Bridgey. Check reconnect and tile state.
+- With file-transfer history present, open the Mac menu while connected, then
+  disconnect/reconnect the phone several times and reopen the menu between
+  transitions. The panel must shrink/grow with its contents, stay directly
+  below the menu-bar icon, and never retain a tall empty area above the card.
 - Test clipboard and a file in both directions, simultaneous transfers and
   cancellation on both ends. Share several photos: one Android Recents task.
 - Test one notification action/reply, dismissal sync and application filtering.

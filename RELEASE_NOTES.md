@@ -1,9 +1,24 @@
-# Bridgey v0.6.0-rc.1 — media and quick actions
+# Bridgey v0.6.0-rc.2 — macOS panel sizing
 
 One complete 0.6 feature candidate for end-to-end testing. This is a prerelease;
 stable 0.5.0 remains the default download until device acceptance is complete.
 
-## New
+## Changes since rc.1
+
+- Constrain the macOS menu-bar panel to its content's ideal height when the
+  connection state changes, instead of accepting a stale taller window size.
+- Give the File transfers summary button an explicit horizontal layout.
+- Add three layout tests for oversized height proposals, repeated grow/shrink
+  transitions, and showing/hiding transfer history.
+- Keep Android functionality unchanged; bump both clients to build 25.
+
+The original system-menu glitch has not been reproduced in the isolated layout
+test. Please confirm this fix on the affected Mac: quit the old Bridgey process,
+install rc.2, and reopen the menu repeatedly while disconnecting/reconnecting
+the phone, with transfer history present. There should be no tall empty area
+above the panel. See the full acceptance checklist below.
+
+## Included 0.6 features
 
 - Control Music or Spotify on your Mac from Android: play/pause, previous/next,
   seek and player volume, with bounded now-playing metadata and optional Music
