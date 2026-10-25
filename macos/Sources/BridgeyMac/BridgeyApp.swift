@@ -167,7 +167,7 @@ private struct BridgeyPanel: View {
                     }
                     if !call.actions.isEmpty {
                         HStack(spacing: 6) {
-                            ForEach(Array(call.actions.prefix(3))) { action in
+                            ForEach(visibleCallActions(call.actions, limit: 3)) { action in
                                 Button(action.title) { pairing.performRemoteCallAction(action) }
                                     .buttonStyle(.bordered)
                                     .lineLimit(1)

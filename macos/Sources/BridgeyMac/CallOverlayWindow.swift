@@ -80,7 +80,7 @@ private struct CallOverlayView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         HStack(spacing: 10) {
-                            ForEach(orderedCallActions(call.actions).prefix(2)) { action in
+                            ForEach(visibleCallActions(call.actions, limit: 2)) { action in
                                 Button(action.title) {
                                     pairing.performRemoteCallAction(action)
                                 }
@@ -102,7 +102,11 @@ private struct CallOverlayView: View {
     }
 
     private func callActionColor(_ title: String) -> Color {
-        title.localizedCaseInsensitiveContains("answer") ? .green : .red
+        switch callActionRole(title) {
+        case .answer: return .green
+        case .end: return .red
+        case .other: return .gray
+        }
     }
 }
 
@@ -122,16 +126,33 @@ private struct CallActionButtonStyle: ButtonStyle {
     }
 }
 
-func orderedCallActions(_ actions: [RemoteCallAction]) -> [RemoteCallAction] {
-    actions.enumerated().sorted { left, right in
-        let leftRank = callActionRank(left.element.title)
-        let rightRank = callActionRank(right.element.title)
-        return leftRank == rightRank ? left.offset < right.offset : leftRank < rightRank
-    }.map(\.element)
+enum CallActionRole {
+    case answer
+    case end
+    case other
 }
 
-private func callActionRank(_ title: String) -> Int {
-    if title.localizedCaseInsensitiveContains("answer") { return 0 }
-    if title.localizedCaseInsensitiveContains("decline") { return 2 }
-    return 1
+private let answerCallActionTitles = ["answer", "accept", "ответить", "принять"]
+private let endCallActionTitles = [
+    "decline", "reject", "hang up", "hangup", "end call",
+    "отклонить", "сбросить", "завершить",
+]
+
+// Titles are only a hint: Android sends the semantic call actions first, in its own order.
+func callActionRole(_ title: String) -> CallActionRole {
+    let normalized = title.lowercased()
+    if endCallActionTitles.contains(where: normalized.contains) { return .end }
+    if answerCallActionTitles.contains(where: normalized.contains) { return .answer }
+    return .other
+}
+
+func visibleCallActions(_ actions: [RemoteCallAction], limit: Int) -> [RemoteCallAction] {
+    var visible = Array(actions.prefix(limit))
+    guard !visible.isEmpty,
+          !visible.contains(where: { callActionRole($0.title) == .end }),
+          let end = actions.dropFirst(limit).first(where: { callActionRole($0.title) == .end }) else {
+        return visible
+    }
+    visible[visible.count - 1] = end
+    return visible
 }

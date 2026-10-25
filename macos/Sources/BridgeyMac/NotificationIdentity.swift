@@ -35,3 +35,25 @@ func remoteNotificationIconFileName(packageName: String, data: Data) -> String {
     let digest = SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
     return "\(digest).png"
 }
+
+struct AlertedNotificationIdentifiers {
+    private let capacity: Int
+    private var order: [String] = []
+    private var members = Set<String>()
+
+    init(capacity: Int = 512) {
+        self.capacity = capacity
+    }
+
+    mutating func insert(_ identifier: String) -> Bool {
+        guard members.insert(identifier).inserted else { return false }
+        order.append(identifier)
+        if order.count > capacity { members.remove(order.removeFirst()) }
+        return true
+    }
+
+    mutating func remove(_ identifier: String) {
+        guard members.remove(identifier) != nil else { return }
+        order.removeAll { $0 == identifier }
+    }
+}

@@ -40,4 +40,22 @@ final class NotificationIdentityTests: XCTestCase {
         XCTAssertNotEqual(first, remoteNotificationIconFileName(packageName: "org.example", data: Data([2])))
         XCTAssertTrue(first.hasSuffix(".png"))
     }
+
+    func testOnlyNewNotificationIdentifiersAlert() {
+        var alerted = AlertedNotificationIdentifiers()
+        XCTAssertTrue(alerted.insert("first"))
+        XCTAssertFalse(alerted.insert("first"))
+        XCTAssertTrue(alerted.insert("second"))
+        alerted.remove("first")
+        XCTAssertTrue(alerted.insert("first"))
+    }
+
+    func testAlertedNotificationIdentifiersStayBounded() {
+        var alerted = AlertedNotificationIdentifiers(capacity: 2)
+        XCTAssertTrue(alerted.insert("first"))
+        XCTAssertTrue(alerted.insert("second"))
+        XCTAssertTrue(alerted.insert("third"))
+        XCTAssertFalse(alerted.insert("third"))
+        XCTAssertTrue(alerted.insert("first"))
+    }
 }
