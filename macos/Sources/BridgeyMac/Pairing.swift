@@ -345,8 +345,8 @@ final class PairingCoordinator: ObservableObject {
 
     private func requestNotificationAuthorization() {
         let notificationCenter = UNUserNotificationCenter.current()
-        notificationCenter.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            DispatchQueue.main.async { [weak self] in
+        notificationCenter.requestAuthorization(options: [.alert, .sound]) { [weak self] granted, error in
+            DispatchQueue.main.async {
                 self?.notificationsAuthorized = granted
                 self?.notificationPermissionDetermined = true
             }
