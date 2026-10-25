@@ -118,8 +118,10 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   type drives a temporary macOS call card. With the separate call-integration
   opt-in, Android's telephony state corrects ambiguous OEM notification state
   and authenticated action tokens invoke the platform Answer, Decline, and
-  Hang Up operations. Without it, Bridgey forwards only actions supplied by
-  the phone application.
+  Hang Up operations. This applies only to notifications from the default or
+  system dialer, or a system in-call UI package. VoIP call notifications
+  (WhatsApp, Signal, Telegram) keep their own call type and actions. Without
+  the opt-in, Bridgey forwards only actions supplied by the phone application.
 - **Calls from Mac:** macOS sends only a strictly validated number over the
   authenticated encrypted session. Android defaults to a notification that
   opens the system dialer for user confirmation. Call status and controls are

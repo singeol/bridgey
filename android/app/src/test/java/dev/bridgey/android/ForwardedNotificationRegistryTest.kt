@@ -38,6 +38,14 @@ class ForwardedNotificationRegistryTest {
         assertTrue(registry.systemKey("two") == "system-two")
     }
 
+    @Test fun reconnectedListenerRetractsOnlyNotificationsThatAreNoLongerActive() {
+        val tracked = linkedSetOf("one", "two", "three")
+
+        assertTrue(staleForwardedNotificationIds(tracked, setOf("two")) == listOf("one", "three"))
+        assertTrue(staleForwardedNotificationIds(tracked, tracked).isEmpty())
+        assertTrue(staleForwardedNotificationIds(emptySet(), setOf("one")).isEmpty())
+    }
+
     @Test fun createsStableOpaqueNotificationToken() {
         val token = notificationToken("0|package|42|tag|uid")
 
@@ -72,6 +80,29 @@ class ForwardedNotificationRegistryTest {
         assertTrue(callStyleFallbackActions("unknown").isEmpty())
     }
 
+    @Test fun callStyleActionsSurviveTheForwardedActionLimit() {
+        val callStyle = listOf("Decline" to "decline-intent", "Answer" to "answer-intent")
+        val own = listOf(
+            "Reply" to "reply-intent",
+            "Message" to "message-intent",
+            "Remind me" to "remind-intent",
+            "Speaker" to "speaker-intent",
+        )
+
+        val actions = prioritizedCallActions(callStyle, own) { it.second }.take(4)
+
+        assertTrue(actions.map { it.first } == listOf("Decline", "Answer", "Reply", "Message"))
+    }
+
+    @Test fun ownActionSharingACallStyleIntentIsNotRepeated() {
+        val callStyle = listOf("Hang Up" to "hang-up-intent")
+        val own = listOf("End call" to "hang-up-intent", "Speaker" to "speaker-intent")
+
+        val actions = prioritizedCallActions(callStyle, own) { it.second }
+
+        assertTrue(actions.map { it.first } == listOf("Hang Up", "Speaker"))
+    }
+
     @Test fun requiredCallIntentsOverrideAnIncorrectReportedCallType() {
         assertTrue(resolvedNotificationCallType("ongoing", hasAnswer = true, hasDecline = true, hasHangUp = false) == "incoming")
         assertTrue(resolvedNotificationCallType("incoming", hasAnswer = false, hasDecline = false, hasHangUp = true) == "ongoing")
@@ -98,6 +129,49 @@ class ForwardedNotificationRegistryTest {
                 hasHangUp = true,
                 hasFullScreenIntent = false,
             ) == "ongoing",
+        )
+    }
+
+    @Test fun appCallKeepingItsFullScreenIntentAfterAnsweringIsOngoing() {
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "ongoing",
+                hasAnswer = false,
+                hasDecline = false,
+                hasHangUp = true,
+                hasFullScreenIntent = true,
+                isTelephonyCall = false,
+            ) == "ongoing",
+        )
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "incoming",
+                hasAnswer = false,
+                hasDecline = false,
+                hasHangUp = true,
+                hasFullScreenIntent = true,
+                isTelephonyCall = false,
+            ) == "ongoing",
+        )
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "ongoing",
+                hasAnswer = true,
+                hasDecline = true,
+                hasHangUp = false,
+                hasFullScreenIntent = true,
+                isTelephonyCall = false,
+            ) == "incoming",
+        )
+        assertTrue(
+            resolvedNotificationCallType(
+                reportedType = "unknown",
+                hasAnswer = false,
+                hasDecline = false,
+                hasHangUp = false,
+                hasFullScreenIntent = true,
+                isTelephonyCall = false,
+            ) == "incoming",
         )
     }
 
@@ -130,6 +204,28 @@ class ForwardedNotificationRegistryTest {
         assertTrue(systemCallActionTitles("screening", 36) == listOf("Hang Up", "Answer"))
         assertTrue(systemCallActionTitles("incoming", 26) == listOf("Answer"))
         assertTrue(systemCallActionTitles("unknown", 36).isEmpty())
+    }
+
+    @Test fun telephonyOverridesApplyOnlyToDialerAndSystemInCallNotifications() {
+        assertTrue(isTelephonyCallSource("com.google.android.dialer", "com.google.android.dialer", null) { false })
+        assertTrue(isTelephonyCallSource("com.android.dialer", "third.party.dialer", "com.android.dialer") { false })
+        assertTrue(isTelephonyCallSource("com.samsung.android.incallui", "com.samsung.android.dialer", null) { true })
+        assertFalse(isTelephonyCallSource("com.whatsapp", "com.google.android.dialer", "com.android.dialer") { false })
+        assertFalse(isTelephonyCallSource("org.thoughtcrime.securesms", null, null) { false })
+    }
+
+    @Test fun dialerMatchSkipsTheInCallServiceLookup() {
+        var lookedUp = false
+        assertTrue(isTelephonyCallSource("com.google.android.dialer", "com.google.android.dialer", null) { lookedUp = true; false })
+        assertFalse(lookedUp)
+    }
+
+    @Test fun systemCallActionsRequireAMatchingTelecomState() {
+        assertTrue(canPerformSystemCallAction(SystemCallAction.ANSWER, isRinging = true, isInCall = true, sdkInt = 36))
+        assertFalse(canPerformSystemCallAction(SystemCallAction.ANSWER, isRinging = false, isInCall = true, sdkInt = 36))
+        assertTrue(canPerformSystemCallAction(SystemCallAction.END, isRinging = false, isInCall = true, sdkInt = 36))
+        assertFalse(canPerformSystemCallAction(SystemCallAction.END, isRinging = false, isInCall = false, sdkInt = 36))
+        assertFalse(canPerformSystemCallAction(SystemCallAction.END, isRinging = true, isInCall = true, sdkInt = 27))
     }
 
     @Test fun ongoingCallPostsUseASettleDelayToSuppressTerminalSamsungUpdates() {

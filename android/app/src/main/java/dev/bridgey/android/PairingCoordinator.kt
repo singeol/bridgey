@@ -1355,6 +1355,7 @@ class PairingCoordinator(
             mutableState.value = PairingState.Connected(current.remoteDeviceId, current.peerName)
             diagnostics.record("pairing", "connected")
             sendFeatureState()
+            BridgeyNotificationListenerService.resendActiveCalls()
             android.util.Log.i("Bridgey", "PAIRING verified peer=${current.peerName}")
         }
     }

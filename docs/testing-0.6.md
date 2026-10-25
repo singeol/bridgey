@@ -55,6 +55,17 @@ should follow device acceptance, not precede it.
 - Test incoming call from the home screen, from another app's heads-up popup,
   and after opening that popup full-screen. Then test outgoing calls, Answer,
   Decline and Hang Up. Confirm no phantom Incoming/Call in progress afterward.
+- Test an incoming and ongoing VoIP call (WhatsApp or Signal) with call
+  integration on. The Mac card must appear while the phone is otherwise idle,
+  and its buttons must act on the VoIP call, never on a cellular call.
+- Test call waiting: with a call in progress, receive a second cellular call.
+  Answer and Decline from the Mac must act on the waiting call, and pressing
+  a stale Answer after the ringing stops must report failure, not success.
+- During a call, revoke Bridgey's notification access, end or change the
+  call, then grant access again. Notifications removed meanwhile must
+  disappear from the Mac and the call card must match the phone.
+- During a call, turn Android Wi-Fi off and on again. After Bridgey
+  reconnects, the Mac call card must return with the current call state.
 
 Pause-on-call depends on forwarded call state: notification forwarding and the
 optional Android Phone permissions must be enabled. It does not carry call
