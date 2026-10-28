@@ -43,6 +43,7 @@ struct FileTransferRow: Identifiable, Equatable {
     let active: Bool
     let startedAt: Date
     let retryable: Bool
+    let queued: Bool
 
     init(
         id: String,
@@ -50,7 +51,8 @@ struct FileTransferRow: Identifiable, Equatable {
         status: String,
         active: Bool,
         startedAt: Date = Date(),
-        retryable: Bool = false
+        retryable: Bool = false,
+        queued: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -58,6 +60,7 @@ struct FileTransferRow: Identifiable, Equatable {
         self.active = active
         self.startedAt = startedAt
         self.retryable = retryable
+        self.queued = queued
     }
 }
 
@@ -219,7 +222,7 @@ final class PairingCoordinator: ObservableObject {
     private var incomingFiles: [String: IncomingFileTransfer] = [:]
     private var outgoingFiles: [String: OutgoingFileTransfer] = [:]
     private var outgoingFileSources: [String: URL] = [:]
-    private var fileOperationID: UUID?
+    private var fileSendQueue = FileSendQueue<URL>()
     private var filePreparationCancellation: FileCancellationToken?
     private var fileTransferWindow: FileTransferWindowController?
     private var fileDropWindow: FileDropWindowController?
@@ -227,6 +230,8 @@ final class PairingCoordinator: ObservableObject {
     private var hiddenCallOverlayIdentity: String?
     private var audibleCallIdentity: String?
     private var cancelledTransferIDs = Set<String>()
+    private var receivedFilesToReveal: [URL] = []
+    private var revealReceivedFilesWorkItem: DispatchWorkItem?
     private var findDeviceSound: NSSound?
     private var lastSentBattery: LocalBatteryStatus?
     private let diagnostics = BridgeyDiagnostics()
@@ -883,19 +888,20 @@ final class PairingCoordinator: ObservableObject {
             guard let self else { return }
             NSApp.activate(ignoringOtherApps: true)
             let panel = NSOpenPanel()
-            panel.title = "Send File to Android"
+            panel.title = L10n.text("files.panel.title", fallback: "Send Files to Android")
             panel.prompt = "Send"
             panel.canChooseFiles = true
             panel.canChooseDirectories = false
-            panel.allowsMultipleSelection = false
+            panel.allowsMultipleSelection = true
             panel.level = .floating
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            self.prepareFile(url)
+            guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+            guard self.session != nil, case .connected = self.state, self.isFeatureAvailable(.files) else { return }
+            self.queueFiles(panel.urls)
         }
     }
 
     @discardableResult
-    func sendDroppedFile(_ url: URL) -> Bool {
+    func sendDroppedFiles(_ urls: [URL]) -> Bool {
         guard session != nil, case .connected = state else {
             fileTransferStatus = "Not connected — file was not sent"
             return false
@@ -904,12 +910,17 @@ final class PairingCoordinator: ObservableObject {
             fileTransferStatus = "File transfer is turned off on one of your devices"
             return false
         }
-        guard url.isFileURL,
-              (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+        let files = urls.filter { url in
+            url.isFileURL && (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        guard !files.isEmpty else {
             fileTransferStatus = "Drop a file, not a folder"
             return false
         }
-        prepareFile(url)
+        queueFiles(files)
+        if files.count < urls.count {
+            fileTransferStatus = L10n.text("drop.foldersSkipped", fallback: "Folders were skipped. Only files are sent.")
+        }
         return true
     }
 
@@ -940,24 +951,69 @@ final class PairingCoordinator: ObservableObject {
         try? report.write(to: url, options: .atomic)
     }
 
-    private func prepareFile(_ url: URL) {
+    /// Adds files to the outgoing queue. Files are offered one after another,
+    /// each as its own transfer, so a failure or cancellation affects only that file.
+    private func queueFiles(_ urls: [URL]) {
+        let queuedAt = Date()
+        let status = L10n.text("files.queued", fallback: "Queued")
+        for (index, url) in urls.enumerated() {
+            let transferID = UUID().uuidString.lowercased()
+            outgoingFileSources[transferID] = url
+            fileTransfers[transferID] = FileTransferRow(
+                id: transferID,
+                name: url.lastPathComponent,
+                status: status,
+                active: true,
+                startedAt: queuedAt.addingTimeInterval(Double(index) / 1_000),
+                queued: true
+            )
+            fileSendQueue.enqueue(id: transferID, item: url)
+        }
+        pruneTransferHistory()
+        beginFileTransferUI()
+        startNextQueuedFile()
+    }
+
+    private func startNextQueuedFile() {
+        guard session != nil, case .connected = state else { return }
+        guard isFeatureAvailable(.files) else {
+            stopFileQueue(status: "File transfer is turned off on one of your devices")
+            return
+        }
+        guard let next = fileSendQueue.startNext() else { return }
+        prepareFile(next.item, transferID: next.id)
+    }
+
+    private func finishQueuedFile(_ transferID: String) {
+        if fileSendQueue.finish(id: transferID) { startNextQueuedFile() }
+    }
+
+    /// Ends every file that has not started yet with the given status. They remain retryable.
+    private func stopFileQueue(status: String) {
+        fileSendQueue.removeAllPending().forEach { markFileTransferFinished(id: $0, status: status) }
+    }
+
+    private func prepareFile(_ url: URL, transferID: String) {
         guard let current = session, case .connected = state else { return }
         let expectedSessionID = current.id
-        let operationID = UUID()
         let preparationCancellation = FileCancellationToken()
-        fileOperationID = operationID
         filePreparationCancellation = preparationCancellation
-        beginFileTransferUI()
+        fileTransferActive = true
         fileTransferStatus = "Preparing \(url.lastPathComponent)…"
+        updateFileTransfer(id: transferID, name: url.lastPathComponent, status: fileTransferStatus!, active: true)
         diagnostics.record(category: "transfer", event: "send_started")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let transfer = try OutgoingFileTransfer(url: url, cancellation: preparationCancellation)
+                let transfer = try OutgoingFileTransfer(url: url, transferID: transferID, cancellation: preparationCancellation)
                 DispatchQueue.main.async {
-                    guard let self, self.fileOperationID == operationID,
-                          let current = self.session, current.id == expectedSessionID,
-                          case .connected = self.state else { return }
+                    guard let self, self.fileSendQueue.currentID == transferID else { return }
                     self.filePreparationCancellation = nil
+                    guard let current = self.session, current.id == expectedSessionID,
+                          case .connected = self.state else {
+                        self.markFileTransferFinished(id: transferID, status: "Transfer interrupted — reconnect to retry")
+                        self.finishQueuedFile(transferID)
+                        return
+                    }
                     do {
                         let payload = try JSONEncoder().encode(transfer.offer)
                         let encrypted = try encrypt(payload, key: current.pairingKey!)
@@ -980,14 +1036,17 @@ final class PairingCoordinator: ObservableObject {
                         self.fileTransferStatus = "Waiting for Android…"
                     } catch {
                         self.fileTransferStatus = "Could not prepare the selected file"
+                        self.markFileTransferFinished(id: transferID, status: self.fileTransferStatus!)
+                        self.finishQueuedFile(transferID)
                     }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    guard self?.fileOperationID == operationID else { return }
-                    self?.fileTransferStatus = "Could not read the selected file"
-                    self?.fileTransferActive = self?.fileTransfers.values.contains(where: { $0.active }) == true
-                    self?.filePreparationCancellation = nil
+                    guard let self, self.fileSendQueue.currentID == transferID else { return }
+                    self.fileTransferStatus = "Could not read the selected file"
+                    self.filePreparationCancellation = nil
+                    self.markFileTransferFinished(id: transferID, status: self.fileTransferStatus!)
+                    self.finishQueuedFile(transferID)
                 }
             }
         }
@@ -996,6 +1055,7 @@ final class PairingCoordinator: ObservableObject {
     func cancelFileTransfer() {
         filePreparationCancellation?.cancel()
         filePreparationCancellation = nil
+        fileSendQueue.removeAll().forEach { markFileTransferFinished(id: $0, status: "Transfer cancelled") }
         let transferIDs = Set(incomingFiles.keys).union(outgoingFiles.keys)
         transferIDs.forEach { transferID in
             markTransferCancelled(transferID)
@@ -1006,18 +1066,26 @@ final class PairingCoordinator: ObservableObject {
         outgoingFiles.values.forEach { $0.cancel() }
         outgoingFiles.removeAll()
         transferIDs.forEach { markFileTransferFinished(id: $0, status: "Transfer cancelled") }
-        fileOperationID = nil
         fileTransferActive = false
         fileTransferStatus = "Transfer cancelled"
     }
 
     func cancelFileTransfer(id transferID: String) {
+        if fileSendQueue.removePending(id: transferID) {
+            markFileTransferFinished(id: transferID, status: "Transfer cancelled")
+            return
+        }
+        if fileSendQueue.currentID == transferID, outgoingFiles[transferID] == nil {
+            filePreparationCancellation?.cancel()
+            filePreparationCancellation = nil
+        }
         markTransferCancelled(transferID)
         session?.send(PairingMessage(kind: "files.cancel", sessionId: session?.id ?? "", transferId: transferID))
         incomingFiles.removeValue(forKey: transferID)?.cancel()
         outgoingFiles.removeValue(forKey: transferID)?.cancel()
         markFileTransferFinished(id: transferID, status: "Transfer cancelled")
         fileTransferStatus = "Transfer cancelled"
+        finishQueuedFile(transferID)
     }
 
     func retryFileTransfer(id transferID: String) {
@@ -1033,7 +1101,7 @@ final class PairingCoordinator: ObservableObject {
         fileTransfers.removeValue(forKey: transferID)
         outgoingFileSources.removeValue(forKey: transferID)
         diagnostics.record(category: "transfer", event: "retry_started")
-        prepareFile(url)
+        queueFiles([url])
     }
 
     func clearTransferHistory() {
@@ -1057,9 +1125,11 @@ final class PairingCoordinator: ObservableObject {
         fileDropWindow?.show()
     }
 
+    /// Shows the transfer window for a new transfer. It is not brought forward again while it is
+    /// already open, so a queue of files does not take focus from other apps once per file.
     private func beginFileTransferUI() {
         fileTransferActive = true
-        showFileTransferWindow()
+        if fileTransferWindow?.window?.isVisible != true { showFileTransferWindow() }
     }
 
     private func startListener() {
@@ -1410,7 +1480,6 @@ final class PairingCoordinator: ObservableObject {
                 guard incomingFiles[offer.transferId] == nil else { throw PairingError.invalidMessage }
                 let transfer = try IncomingFileTransfer(offer: offer, directoryAccess: settings.receiveDirectoryAccess())
                 incomingFiles[offer.transferId] = transfer
-                fileOperationID = UUID()
                 beginFileTransferUI()
                 fileTransferStatus = "Receiving \(transfer.displayName): \(transfer.progressStatus(force: true)!)"
                 updateFileTransfer(id: offer.transferId, name: transfer.displayName, status: fileTransferStatus!, active: true)
@@ -1462,13 +1531,12 @@ final class PairingCoordinator: ObservableObject {
                     fileTransferStatus = "Saved \(transfer.displayName) to \(folder)"
                     updateFileTransfer(id: completion.transferId, name: transfer.displayName, status: fileTransferStatus!, active: false)
                     fileTransferActive = fileTransfers.values.contains(where: { $0.active })
-                    fileOperationID = nil
                     current.send(PairingMessage(
                         kind: "files.complete.ack",
                         sessionId: current.id,
                         transferId: completion.transferId
                     ))
-                    NSWorkspace.shared.activateFileViewerSelecting([destination])
+                    revealReceivedFile(destination)
                     NSLog("PLUGIN file received name=%@", transfer.displayName)
                 } catch {
                     transfer.cancel()
@@ -1507,13 +1575,14 @@ final class PairingCoordinator: ObservableObject {
                             if transfer.isCancelled {
                                 self.fileTransferStatus = "Transfer cancelled"
                                 self.markFileTransferFinished(id: transferID, status: "Transfer cancelled")
+                                self.finishQueuedFile(transferID)
                                 return
                             } else {
                                 self.fileTransferStatus = "File transfer failed"
                             }
                             self.fileTransferActive = self.fileTransfers.values.contains(where: { $0.active })
-                            self.fileOperationID = nil
                             self.updateFileTransfer(id: transferID, name: transfer.displayName, status: self.fileTransferStatus!, active: false)
+                            self.finishQueuedFile(transferID)
                         }
                     }
                 )
@@ -1523,9 +1592,10 @@ final class PairingCoordinator: ObservableObject {
                 transfer.cancel()
                 markTransferCancelled(transferID)
                 markFileTransferFinished(id: transferID, status: "File transfer is turned off on Android")
-                fileOperationID = nil
                 filePreparationCancellation = nil
                 fileTransferStatus = "File transfer is turned off on Android"
+                stopFileQueue(status: "File transfer is turned off on Android")
+                finishQueuedFile(transferID)
             case "files.complete.ack":
                 guard let transferID = message.transferId,
                       let transfer = outgoingFiles.removeValue(forKey: transferID) else { return }
@@ -1533,19 +1603,19 @@ final class PairingCoordinator: ObservableObject {
                 fileTransferStatus = "\(transfer.displayName) saved on Android"
                 updateFileTransfer(id: transferID, name: transfer.displayName, status: fileTransferStatus!, active: false)
                 fileTransferActive = fileTransfers.values.contains(where: { $0.active })
-                fileOperationID = nil
                 filePreparationCancellation = nil
                 NSLog("PLUGIN file sent name=%@", transfer.displayName)
+                finishQueuedFile(transferID)
             case "files.cancel":
                 guard let transferID = message.transferId else { return }
                 markTransferCancelled(transferID)
                 incomingFiles.removeValue(forKey: transferID)?.cancel()
                 outgoingFiles.removeValue(forKey: transferID)?.cancel()
                 markFileTransferFinished(id: transferID, status: "Transfer cancelled by Android")
-                fileOperationID = nil
                 fileTransferStatus = "Transfer cancelled by Android"
                 current.send(PairingMessage(kind: "files.cancel.ack", sessionId: current.id, transferId: transferID))
                 NSLog("PLUGIN file cancellation received transfer=%@", String(transferID.prefix(8)))
+                finishQueuedFile(transferID)
             case "files.cancel.ack":
                 if let transferID = message.transferId {
                     markFileTransferFinished(id: transferID, status: "Transfer cancelled")
@@ -1597,13 +1667,16 @@ final class PairingCoordinator: ObservableObject {
 
     private func cancelIncomingFiles() {
         let hadActiveTransfers = fileTransfers.values.contains(where: { $0.active })
+        filePreparationCancellation?.cancel()
+        fileSendQueue.removeAll().forEach {
+            markFileTransferFinished(id: $0, status: "Transfer interrupted — reconnect to retry")
+        }
         incomingFiles.values.forEach { $0.cancel() }
         incomingFiles.removeAll()
         outgoingFiles.values.forEach { $0.cancel() }
         outgoingFiles.removeAll()
         fileTransfers = recoverInterruptedTransfers(fileTransfers)
         fileTransferActive = false
-        fileOperationID = nil
         filePreparationCancellation = nil
         if fileTransferStatus?.hasPrefix("Receiving ") == true {
             fileTransferStatus = "File transfer interrupted"
@@ -1611,6 +1684,23 @@ final class PairingCoordinator: ObservableObject {
         if hadActiveTransfers {
             diagnostics.record(category: "transfer", event: "interrupted", outcome: "retry_available")
         }
+    }
+
+    /// Shows a received file in Finder. Files that arrive in quick succession,
+    /// such as a queue sent from Android, are selected together in one window
+    /// instead of bringing Finder forward once per file.
+    private func revealReceivedFile(_ url: URL) {
+        receivedFilesToReveal.append(url)
+        revealReceivedFilesWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let urls = Array(self.receivedFilesToReveal.suffix(maximumTransferHistory))
+            self.receivedFilesToReveal.removeAll()
+            self.revealReceivedFilesWorkItem = nil
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        }
+        revealReceivedFilesWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
     private func markTransferCancelled(_ transferID: String) {
@@ -2122,7 +2212,7 @@ private final class FileCancellationToken: @unchecked Sendable {
 private final class OutgoingFileTransfer {
     private static let chunkSize = 24 * 1024
     private static let acknowledgementWindow: Int64 = 64
-    let transferID = UUID().uuidString.lowercased()
+    let transferID: String
     let displayName: String
     let offer: FileOfferPayload
     private let url: URL
@@ -2156,8 +2246,9 @@ private final class OutgoingFileTransfer {
         if isCancelled { throw PairingError.cancelled }
     }
 
-    init(url: URL, cancellation: FileCancellationToken) throws {
+    init(url: URL, transferID: String, cancellation: FileCancellationToken) throws {
         self.url = url
+        self.transferID = transferID
         displayName = url.lastPathComponent
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey])
         let size = Int64(values.fileSize ?? -1)
@@ -2270,6 +2361,24 @@ private final class MacTransferProgress {
     }
 }
 
+/// Finder-style collision handling: "name.ext", then "name 2.ext", "name 3.ext", and so on.
+/// A name whose partial file is still being received counts as taken.
+func uniqueReceivedFileURL(_ requested: URL) -> URL {
+    func isTaken(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) ||
+            FileManager.default.fileExists(atPath: url.appendingPathExtension("bridgey-part").path)
+    }
+    guard isTaken(requested) else { return requested }
+    let extensionPart = requested.pathExtension
+    let stem = requested.deletingPathExtension().lastPathComponent
+    for number in 2...10_000 {
+        let name = extensionPart.isEmpty ? "\(stem) \(number)" : "\(stem) \(number).\(extensionPart)"
+        let candidate = requested.deletingLastPathComponent().appendingPathComponent(name)
+        if !isTaken(candidate) { return candidate }
+    }
+    return requested.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+}
+
 private final class IncomingFileTransfer {
     let displayName: String
     let expectedSize: Int64
@@ -2293,7 +2402,7 @@ private final class IncomingFileTransfer {
         displayName = sanitized
         let directory = directoryAccess.url
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        finalURL = Self.uniqueURL(directory.appendingPathComponent(sanitized))
+        finalURL = uniqueReceivedFileURL(directory.appendingPathComponent(sanitized))
         partialURL = finalURL.appendingPathExtension("bridgey-part")
         FileManager.default.createFile(atPath: partialURL.path, contents: nil)
         handle = try FileHandle(forWritingTo: partialURL)
@@ -2350,18 +2459,6 @@ private final class IncomingFileTransfer {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")
         return String(leaf.prefix(255)).isEmpty ? "file" : String(leaf.prefix(255))
-    }
-
-    private static func uniqueURL(_ requested: URL) -> URL {
-        guard FileManager.default.fileExists(atPath: requested.path) else { return requested }
-        let extensionPart = requested.pathExtension
-        let stem = requested.deletingPathExtension().lastPathComponent
-        for number in 2...10_000 {
-            let name = extensionPart.isEmpty ? "\(stem) \(number)" : "\(stem) \(number).\(extensionPart)"
-            let candidate = requested.deletingLastPathComponent().appendingPathComponent(name)
-            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-        }
-        return requested.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

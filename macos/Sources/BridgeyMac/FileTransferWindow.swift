@@ -37,7 +37,7 @@ private struct FileTransferView: View {
                     } else {
                         ForEach(pairing.fileTransfers.values.sorted(by: { $0.startedAt > $1.startedAt })) { transfer in
                             HStack(alignment: .center, spacing: 12) {
-                                if transfer.active { ProgressView().controlSize(.small) }
+                                if transfer.active && !transfer.queued { ProgressView().controlSize(.small) }
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(transfer.name).fontWeight(.medium)
                                     Text(transfer.status).font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(2)

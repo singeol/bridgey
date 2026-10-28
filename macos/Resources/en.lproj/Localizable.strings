@@ -1,8 +1,12 @@
 "welcome.title" = "Welcome to Bridgey";
 "welcome.body" = "Keep your Mac and phone on the same local network. Choose a device, compare the pairing code, and confirm it on both devices. Optional permissions are requested only when you use the related feature.";
 "welcome.continue" = "Get started";
-"drop.title" = "Drop a file here to send";
+"drop.title" = "Drop files here to send";
 "drop.open" = "Open file drop window";
 "drop.detail" = "This window stays open while you switch to Finder.";
-"drop.ready" = "Drop one file anywhere in this area";
+"drop.ready" = "Drop one or more files anywhere in this area. They are sent one after another.";
 "drop.unavailable" = "Connect an Android device and enable File transfer first.";
+"drop.hint" = "Drop files to send them to the connected Android device one after another";
+"drop.foldersSkipped" = "Folders were skipped. Only files are sent.";
+"files.panel.title" = "Send Files to Android";
+"files.queued" = "Queued";

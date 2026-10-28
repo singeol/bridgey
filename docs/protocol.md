@@ -93,11 +93,11 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, and `media`. A UI action is
+`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, `media`, and `folders`. A UI action is
 available only when both peers report the corresponding feature as enabled. Clients
 predating this message are treated as enabling the original v1 features for
-compatibility; the later `calls`, `ping`, `links`, and `media` features are disabled unless a peer
-advertises them explicitly.
+compatibility; the later `calls`, `ping`, `links`, `media`, and `folders` features are disabled unless a peer
+advertises them explicitly. A receiver ignores keys it does not know.
 
 ## Pairing flow
 
@@ -218,6 +218,19 @@ rename of the partial file. The macOS v1 receiver saves collision-safe names in
 a user-selected directory (default `~/Downloads/Bridgey`) and removes partial
 files when a transfer is interrupted.
 
+Sending several files does not add messages. The sender keeps a local queue and
+offers one file at a time; the next `files.offer` follows only after the
+previous transfer completes, fails, or is cancelled. Each queued file has its
+own transfer ID, so cancelling or retrying one file does not affect the others.
+Waiting files never reach the receiver, which therefore applies its limits and
+feature policy to every file separately.
+
+Receivers resolve name conflicts deterministically and never overwrite an
+existing file. macOS uses Finder-style numbering (`photo.jpg`, `photo 2.jpg`,
+`photo 3.jpg`) and also treats a name as taken while its `.bridgey-part` file
+exists. Android lets `MediaStore` choose a unique name in `Download/Bridgey`,
+which appends a number such as `photo (1).jpg`.
+
 Version 1 does not resume a partial file stream. If a connection is interrupted,
 the receiver deletes its pending partial file and both clients mark the transfer
 as interrupted. A user-initiated retry creates a new transfer identifier,
@@ -237,6 +250,74 @@ An offer repeats its transfer ID in the outer session message so a receiver
 whose local file policy is disabled can return `files.rejected` without
 decrypting or accepting the offer. It then resends `features.update` to repair
 stale UI state on the sender.
+
+### Folders (`folders`)
+
+A folder transfer sends a directory tree as one unit and reuses the file
+stream above for its contents. It is offered only while both peers report
+`files` and `folders`. The messages are direction-neutral; the current clients
+send folders from macOS to Android.
+
+Folder payloads are AES-GCM encrypted, carry `version: 1` and a lowercase UUID
+`folderId`, and are accepted only in the connected session after the replay
+check. Plaintext is limited to 32 KiB. `folders.offer`, `folders.rejected`,
+`folders.cancel` and `folders.cancel.ack` repeat the folder ID in the outer
+`transferId`. As with files, a receiver whose local policy disables files or
+folders answers an outer-only `folders.rejected` without decrypting the offer
+and resends `features.update`; `folders.cancel` and its acknowledgement are
+outer-only like `files.cancel`.
+
+1. The sender sends `folders.offer` `{version, folderId, name, fileCount,
+   folderCount, totalSize, pageCount}`, then `pageCount` (1 to 64)
+   `folders.manifest` pages `{version, folderId, page, entries}` in order
+   without waiting. A page holds at most 256 entries, each `{type: "dir",
+   path}` or `{type: "file", path, size}`. An entry's index is its position
+   across all pages. Senders list a directory before its contents.
+2. The receiver validates the complete manifest before writing anything:
+   `name` and every path component are 1 to 255 UTF-8 bytes, are not `.` or
+   `..`, and contain no `/`, NUL or other control character (U+0000 to U+001F,
+   U+007F); paths are relative, joined with `/`, at most 32 components and
+   1,024 UTF-8 bytes; every entry's parent is the folder itself or a `dir`
+   entry listed earlier; no path repeats; there are 1 to 10,000 files and at
+   most 2,000 folders, each file is at most 10 GB, at most 1 TiB in total, and
+   the counts and total match the offer. Only one incoming folder is active per
+   session.
+3. Within 15 seconds of the last page the receiver answers `folders.accept`
+   `{version, folderId, name}` with the local folder name, or an encrypted
+   `folders.rejected` `{version, folderId, code}` with `policy`, `unsupported`,
+   `busy`, `invalid_manifest`, `limit_exceeded`, `insufficient_space` or
+   `io_error`. A rejection leaves the session open; pages for a folder that is
+   not being collected are ignored.
+4. Each file entry is then sent as a normal file transfer, one at a time in
+   manifest order. The encrypted `files.offer` adds `folderId` and `entry`. The
+   receiver accepts it only while that folder is active, when `entry` is a
+   `file` entry after the previous one, `name` equals the entry's last path
+   component and `size` equals its manifest size. A sender may skip a file it
+   cannot read. Paths are never taken from `files.offer` itself.
+5. The sender ends with `folders.complete` `{version, folderId, sentFiles}`.
+   The receiver answers `folders.result` `{version, folderId, savedFiles}` and
+   forgets the folder.
+
+Either peer may send `folders.cancel`; the sender also cancels the file in
+progress with `files.cancel`. Files already saved stay and the partial file is
+deleted. A disconnect ends the folder transfer. Version 1 does not resume: a
+retry sends the whole folder again as a new folder.
+
+Conflict handling is deterministic and never overwrites or merges. A received
+folder is always saved as a new folder in the receive directory; when its name
+is taken, the receiver uses the first free numbered name (`Photos (1)`).
+Inside the new folder each name is made safe for local storage (NFC, `"`, `*`,
+`:`, `<`, `>`, `?`, `\`, `|` and control characters become `_`, leading spaces
+and trailing spaces and dots are removed, at most 200 UTF-8 bytes with the
+extension kept). When two siblings then match ignoring case, the later one in
+manifest order gets the first free number (`photo (1).jpg`, `Album (1)`).
+
+Android saves received folders through `MediaStore` under
+`Download/Bridgey/<folder>/` with `IS_PENDING` set on each file until it is
+verified, so no storage permission is needed. MediaStore stores files only, so
+empty folders are not created on Android. The macOS sender skips hidden items,
+symbolic links, special files and partial `.bridgey-part` files, and anything
+outside the limits above, and does not send a folder without files.
 
 ### Notifications (`notifications.send.v1`, `notifications.dismiss.v1`)
 

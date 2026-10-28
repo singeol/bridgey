@@ -259,8 +259,8 @@ Bridgey asks for access only when the related feature needs it:
   encrypted connections to Android devices.
 - macOS notifications are optional and are requested only when the user enables
   Android notification display on the Mac.
-- File access is scoped to a file selected by the user and the Bridgey receive
-  directory (`Downloads/Bridgey`).
+- File access is scoped to the files selected by the user and the Bridgey
+  receive directory (`Downloads/Bridgey`).
 
 Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
 screen recording, Accessibility, Input Monitoring, or Full Disk Access.
@@ -305,6 +305,14 @@ already accepted is allowed to finish, while disabling Find Device stops a
 currently playing alert. Android received files remain in `Download/Bridgey`;
 this uses scoped `MediaStore` access and avoids requesting broad storage
 permission.
+
+You can pick or drop several files at once on either device. They are sent one
+after another as a visible queue in the transfer list: each waiting file shows
+**Queued** and can be cancelled on its own, and cancelling all transfers also
+empties the queue. Folders are not sent. A received file never replaces an existing
+one: macOS adds a number (`photo 2.jpg`) and Android lets the system add one
+(`photo (1).jpg`). Files that arrive on the Mac in quick succession are
+selected together in one Finder window.
 
 Recent file transfers remain visible until cleared. An outgoing transfer that
 fails or is interrupted can be retried after the devices reconnect; retrying
