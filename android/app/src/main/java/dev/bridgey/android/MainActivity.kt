@@ -101,13 +101,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var bridgeySettings: BridgeySettings
     private var notificationAccessEnabled by mutableStateOf(false)
     private var appNotificationsEnabled by mutableStateOf(false)
+    private var callPermissionsGranted by mutableStateOf(false)
     private var sharedContent by mutableStateOf<SharedContent?>(null)
     private var showOnboarding by mutableStateOf(false)
     private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshPermissionState()
     }
     private val callPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        bridgeySettings.setDirectCallsEnabled(hasCallIntegrationPermissions())
+        callPermissionsGranted = hasCallIntegrationPermissions()
+        bridgeySettings.setDirectCallsEnabled(callPermissionsGranted)
         BridgeyNotificationListenerService.callPermissionsChanged()
     }
 
@@ -119,7 +121,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         bridgey.enableBridgey()
-        showOnboarding = !getSharedPreferences("bridgey_onboarding", MODE_PRIVATE)
+        showOnboarding = !getSharedPreferences(BridgeyApplication.ONBOARDING_PREFERENCES, MODE_PRIVATE)
             .getBoolean("completed", false)
         pairing = bridgey.pairing
         discovery = bridgey.discovery
@@ -135,6 +137,7 @@ class MainActivity : ComponentActivity() {
                     onDeviceNameChanged = bridgey::updateDeviceName,
                     appNotificationsEnabled = appNotificationsEnabled,
                     notificationAccessEnabled = notificationAccessEnabled,
+                    callPermissionsGranted = callPermissionsGranted,
                     onTurnOff = {
                         startService(Intent(this, BridgeyConnectionService::class.java).setAction(BridgeyConnectionService.ACTION_TURN_OFF))
                         finishAndRemoveTask()
@@ -145,12 +148,17 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     },
                     onRequestDirectCalls = ::requestDirectCalls,
+                    onOpenAppDetailsSettings = ::openAppDetailsSettings,
                     onExportDiagnostics = ::exportDiagnostics,
+                    onResetLocalData = {
+                        bridgey.resetLocalData()
+                        showOnboarding = true
+                    },
                     sharedContent = sharedContent,
                     onSharedContentHandled = ::clearSharedContent,
                     showOnboarding = showOnboarding,
                     onOnboardingComplete = {
-                        getSharedPreferences("bridgey_onboarding", MODE_PRIVATE)
+                        getSharedPreferences(BridgeyApplication.ONBOARDING_PREFERENCES, MODE_PRIVATE)
                             .edit().putBoolean("completed", true).apply()
                         showOnboarding = false
                     },
@@ -200,6 +208,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshPermissionState() {
         appNotificationsEnabled = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         notificationAccessEnabled = NotificationAccess.isEnabled(this)
+        callPermissionsGranted = hasCallIntegrationPermissions()
         if (
             ::bridgeySettings.isInitialized && bridgeySettings.state.value.directCallsEnabled &&
             !hasCallIntegrationPermissions()
@@ -240,6 +249,10 @@ class MainActivity : ComponentActivity() {
             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                 .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
         )
+    }
+
+    private fun openAppDetailsSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
     }
 
     private fun exportDiagnostics() {
@@ -298,12 +311,15 @@ private fun BridgeyApp(
     onDeviceNameChanged: (String) -> Unit,
     appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
+    callPermissionsGranted: Boolean,
     onTurnOff: () -> Unit,
     onRequestAppNotifications: () -> Unit,
     onOpenAppNotificationSettings: () -> Unit,
     onOpenNotificationAccessSettings: () -> Unit,
     onRequestDirectCalls: () -> Unit,
+    onOpenAppDetailsSettings: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onResetLocalData: () -> Unit,
     sharedContent: SharedContent?,
     onSharedContentHandled: () -> Unit,
     showOnboarding: Boolean,
@@ -323,6 +339,14 @@ private fun BridgeyApp(
     val settingsState by settings.state.collectAsStateWithLifecycle()
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
     var showingSettings by remember { mutableStateOf(false) }
+    val onAppNotifications: () -> Unit = {
+        if (appNotificationsEnabled) onOpenAppNotificationSettings()
+        else permissionPrompt = PermissionPrompt.BridgeyNotifications
+    }
+    val onNotificationForwarding: () -> Unit = {
+        if (notificationAccessEnabled) onOpenNotificationAccessSettings()
+        else permissionPrompt = PermissionPrompt.NotificationForwarding
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -377,7 +401,18 @@ private fun BridgeyApp(
                     }
                 },
                 onForget = pairing::forget,
+                permissions = PermissionStates(appNotificationsEnabled, notificationAccessEnabled, callPermissionsGranted),
+                onAppNotifications = onAppNotifications,
+                onNotificationForwarding = onNotificationForwarding,
+                onPhonePermissions = {
+                    if (callPermissionsGranted) onOpenAppDetailsSettings()
+                    else permissionPrompt = PermissionPrompt.DirectCalls
+                },
                 onExportDiagnostics = onExportDiagnostics,
+                onResetLocalData = {
+                    onResetLocalData()
+                    showingSettings = false
+                },
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -398,14 +433,8 @@ private fun BridgeyApp(
                 pairing = pairing,
                 appNotificationsEnabled = appNotificationsEnabled,
                 notificationAccessEnabled = notificationAccessEnabled,
-                onAppNotifications = {
-                    if (appNotificationsEnabled) onOpenAppNotificationSettings()
-                    else permissionPrompt = PermissionPrompt.BridgeyNotifications
-                },
-                onNotificationForwarding = {
-                    if (notificationAccessEnabled) onOpenNotificationAccessSettings()
-                    else permissionPrompt = PermissionPrompt.NotificationForwarding
-                },
+                onAppNotifications = onAppNotifications,
+                onNotificationForwarding = onNotificationForwarding,
                 onTurnOff = onTurnOff,
                 modifier = Modifier.padding(padding),
             )
@@ -416,7 +445,12 @@ private fun BridgeyApp(
         AlertDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.welcome_title)) },
-            text = { Text(stringResource(R.string.welcome_body)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.welcome_body))
+                    Text(stringResource(R.string.welcome_permissions), style = MaterialTheme.typography.bodySmall)
+                }
+            },
             confirmButton = {
                 Button(onClick = onOnboardingComplete) {
                     Text(stringResource(R.string.welcome_continue))
@@ -552,10 +586,16 @@ private fun SettingsScreen(
     onNotificationApplicationChanged: (String, Boolean) -> Unit,
     onDirectCallsChanged: (Boolean) -> Unit,
     onForget: (String) -> Unit,
+    permissions: PermissionStates,
+    onAppNotifications: () -> Unit,
+    onNotificationForwarding: () -> Unit,
+    onPhonePermissions: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onResetLocalData: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editedName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
+    var confirmingReset by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
@@ -690,6 +730,45 @@ private fun SettingsScreen(
                 }
             }
         }
+        item { SectionTitle(stringResource(R.string.settings_permissions_title)) }
+        item {
+            Text(
+                stringResource(R.string.settings_permissions_intro),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        item {
+            PermissionCard(
+                name = stringResource(R.string.permission_notifications_name),
+                purpose = stringResource(R.string.permission_notifications_why),
+                allowed = permissions.appNotifications,
+                onClick = onAppNotifications,
+            )
+        }
+        item {
+            PermissionCard(
+                name = stringResource(R.string.permission_notification_access_name),
+                purpose = stringResource(R.string.permission_notification_access_why),
+                allowed = permissions.notificationAccess,
+                onClick = onNotificationForwarding,
+            )
+        }
+        item {
+            PermissionCard(
+                name = stringResource(R.string.permission_phone_name),
+                purpose = stringResource(R.string.permission_phone_why),
+                allowed = permissions.phone,
+                onClick = onPhonePermissions,
+            )
+        }
+        item {
+            Text(
+                stringResource(R.string.permission_network_note),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         item { SectionTitle("Diagnostics") }
         item {
             Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
@@ -699,7 +778,64 @@ private fun SettingsScreen(
                 }
             }
         }
+        item { SectionTitle(stringResource(R.string.reset_title)) }
+        item {
+            Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.reset_summary), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(
+                        onClick = { confirmingReset = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text(stringResource(R.string.reset_button)) }
+                }
+            }
+        }
         item { Spacer(Modifier.height(12.dp)) }
+    }
+
+    if (confirmingReset) {
+        AlertDialog(
+            onDismissRequest = { confirmingReset = false },
+            title = { Text(stringResource(R.string.reset_confirm_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.reset_confirm_deleted))
+                    Text(stringResource(R.string.reset_confirm_kept))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmingReset = false
+                        onResetLocalData()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.reset_confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmingReset = false }) { Text(stringResource(R.string.reset_cancel)) } },
+        )
+    }
+}
+
+private data class PermissionStates(val appNotifications: Boolean, val notificationAccess: Boolean, val phone: Boolean)
+
+@Composable
+private fun PermissionCard(name: String, purpose: String, allowed: Boolean, onClick: () -> Unit) {
+    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(name, fontWeight = FontWeight.Medium)
+                Text(purpose, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    stringResource(if (allowed) R.string.permission_allowed else R.string.permission_not_allowed),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (allowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onClick) {
+                Text(stringResource(if (allowed) R.string.permission_manage else R.string.permission_allow))
+            }
+        }
     }
 }
 

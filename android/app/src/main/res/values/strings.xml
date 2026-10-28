@@ -5,4 +5,26 @@
     <string name="welcome_title">Welcome to Bridgey</string>
     <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
     <string name="welcome_continue">Get started</string>
+    <string name="welcome_permissions">Optional permissions: Notifications keep the connection, file transfers and Find Device visible. Notification access forwards notifications to your Mac. Phone lets your Mac start, answer and end calls. Each is requested only when you turn on that feature. Review them any time in Settings, Permissions.</string>
+    <string name="settings_permissions_title">Permissions</string>
+    <string name="settings_permissions_intro">Bridgey asks for a permission only when you turn on the feature that needs it. Denying a permission turns off only that feature.</string>
+    <string name="permission_notifications_name">Notifications</string>
+    <string name="permission_notifications_why">Keep the connection, file transfers, received files and Find Device visible.</string>
+    <string name="permission_notification_access_name">Notification access</string>
+    <string name="permission_notification_access_why">Reads notification titles and text and sends them only to your paired Mac.</string>
+    <string name="permission_phone_name">Phone</string>
+    <string name="permission_phone_why">Lets your paired Mac start calls and answer, decline or end them. Bridgey does not read contacts or call history.</string>
+    <string name="permission_network_note">Finding and connecting to your Mac on the local network needs no permission. Bridgey never asks for location, contacts, SMS, camera or microphone access.</string>
+    <string name="permission_allowed">Allowed</string>
+    <string name="permission_not_allowed">Not allowed</string>
+    <string name="permission_manage">Manage</string>
+    <string name="permission_allow">Allow</string>
+    <string name="reset_title">Reset Bridgey on this phone</string>
+    <string name="reset_summary">Deletes paired devices, settings and the recent transfer list on this phone.</string>
+    <string name="reset_button">Reset Bridgey</string>
+    <string name="reset_confirm_title">Reset Bridgey on this phone?</string>
+    <string name="reset_confirm_deleted">Deleted: paired Macs and their keys, all settings and per-device choices, the notification application list, call settings and the recent transfer list. The welcome guide shows again.</string>
+    <string name="reset_confirm_kept">Kept: received files in Download/Bridgey, permissions granted in Android Settings, and this phone’s identity. Your Macs keep their record of this phone until you forget it there.</string>
+    <string name="reset_confirm">Reset</string>
+    <string name="reset_cancel">Cancel</string>
 </resources>

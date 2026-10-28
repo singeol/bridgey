@@ -104,10 +104,10 @@ private func smallMediaArtwork(_ descriptor: String) -> String? {
 @MainActor
 final class MediaController: ObservableObject {
     @Published var player: MediaPlayer {
-        didSet { UserDefaults.standard.set(player.rawValue, forKey: "media.player"); generation += 1; refresh() }
+        didSet { defaults.set(player.rawValue, forKey: "media.player"); generation += 1; refresh() }
     }
     @Published var pauseForCalls: Bool {
-        didSet { UserDefaults.standard.set(pauseForCalls, forKey: "media.pauseForCalls") }
+        didSet { defaults.set(pauseForCalls, forKey: "media.pauseForCalls") }
     }
     @Published private(set) var snapshot = MediaSnapshot()
     var onState: ([String: Any]) -> Void = { _ in }
@@ -117,10 +117,12 @@ final class MediaController: ObservableObject {
     private var callActive = false
     private var pendingPause = false
     private let queue = DispatchQueue(label: "dev.bridgey.media")
+    private let defaults: UserDefaults
 
-    init() {
-        player = MediaPlayer(rawValue: UserDefaults.standard.string(forKey: "media.player") ?? "") ?? .off
-        pauseForCalls = UserDefaults.standard.bool(forKey: "media.pauseForCalls")
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        player = MediaPlayer(rawValue: defaults.string(forKey: "media.player") ?? "") ?? .off
+        pauseForCalls = defaults.bool(forKey: "media.pauseForCalls")
     }
 
     func refresh() { perform(nil, completion: { _ in }) }

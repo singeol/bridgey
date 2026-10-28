@@ -5,4 +5,26 @@
     <string name="welcome_title">Добро пожаловать в Bridgey</string>
     <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
     <string name="welcome_continue">Начать</string>
+    <string name="welcome_permissions">Необязательные разрешения: уведомления показывают подключение, передачи файлов и поиск устройства. Доступ к уведомлениям пересылает уведомления на ваш Mac. Телефон позволяет Mac начинать, принимать и завершать звонки. Каждое запрашивается, только когда вы включаете соответствующую функцию. Посмотреть их можно в любой момент в разделе Настройки, Разрешения.</string>
+    <string name="settings_permissions_title">Разрешения</string>
+    <string name="settings_permissions_intro">Bridgey просит разрешение, только когда вы включаете функцию, которой оно нужно. Если отказать, отключится только эта функция.</string>
+    <string name="permission_notifications_name">Уведомления</string>
+    <string name="permission_notifications_why">Показывают подключение, передачи файлов, полученные файлы и поиск устройства.</string>
+    <string name="permission_notification_access_name">Доступ к уведомлениям</string>
+    <string name="permission_notification_access_why">Читает заголовки и текст уведомлений и отправляет их только на связанный Mac.</string>
+    <string name="permission_phone_name">Телефон</string>
+    <string name="permission_phone_why">Позволяет связанному Mac начинать звонки, принимать, отклонять и завершать их. Bridgey не читает контакты и журнал звонков.</string>
+    <string name="permission_network_note">Для поиска Mac и подключения к нему в локальной сети разрешение не нужно. Bridgey никогда не запрашивает доступ к местоположению, контактам, SMS, камере или микрофону.</string>
+    <string name="permission_allowed">Разрешено</string>
+    <string name="permission_not_allowed">Не разрешено</string>
+    <string name="permission_manage">Настроить</string>
+    <string name="permission_allow">Разрешить</string>
+    <string name="reset_title">Сбросить Bridgey на этом телефоне</string>
+    <string name="reset_summary">Удаляет связанные устройства, настройки и список недавних передач на этом телефоне.</string>
+    <string name="reset_button">Сбросить Bridgey</string>
+    <string name="reset_confirm_title">Сбросить Bridgey на этом телефоне?</string>
+    <string name="reset_confirm_deleted">Удаляется: связанные Mac и их ключи, все настройки и выбор для каждого устройства, список приложений для уведомлений, настройки звонков и список недавних передач. Приветствие покажется снова.</string>
+    <string name="reset_confirm_kept">Остаётся: полученные файлы в Download/Bridgey, разрешения, выданные в настройках Android, и идентификатор этого телефона. Ваши Mac хранят запись об этом телефоне, пока вы не удалите её там.</string>
+    <string name="reset_confirm">Сбросить</string>
+    <string name="reset_cancel">Отмена</string>
 </resources>

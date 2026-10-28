@@ -106,6 +106,20 @@ class BridgeyApplication : Application() {
         pairing.pause()
     }
 
+    /**
+     * Settings, Reset Bridgey on this phone: deletes trust records, settings and the first-run flag
+     * (docs/upgrade-policy.md). The device ID, signing key, received files and granted permissions stay.
+     */
+    fun resetLocalData() {
+        pairing.forgetAllDevices()
+        settings.reset()
+        getSharedPreferences(ONBOARDING_PREFERENCES, MODE_PRIVATE).edit().clear().commit()
+        val name = settings.state.value.deviceName
+        pairing.updateDeviceName(name)
+        discovery.updateDeviceName(name)
+        BridgeyNotificationListenerService.callPermissionsChanged()
+    }
+
     fun updateDeviceName(value: String) {
         settings.setDeviceName(value)
         val name = settings.state.value.deviceName
@@ -126,5 +140,6 @@ class BridgeyApplication : Application() {
 
     companion object {
         private const val PREFERENCE_ENABLED = "bridgey_enabled"
+        internal const val ONBOARDING_PREFERENCES = "bridgey_onboarding"
     }
 }

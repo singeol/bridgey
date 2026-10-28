@@ -286,6 +286,12 @@ private struct BridgeyPanel: View {
             ))
             .font(.caption)
             .foregroundStyle(.secondary)
+            Text(L10n.text(
+                "welcome.permissions",
+                fallback: "Bridgey needs Local Network access to find your phone. Notifications, for Android notifications and calls, and Automation, for Music or Spotify, are optional and requested only when you turn those features on. Review them in Settings, Permissions."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Button(L10n.text("welcome.continue", fallback: "Get started")) {
                 settings.completeOnboarding()
             }
@@ -442,6 +448,7 @@ private struct SettingsView: View {
     @ObservedObject var settings: BridgeySettings
     @State private var editedName = ""
     @State private var phoneLinkStatus: String?
+    @State private var confirmingReset = false
 
     var body: some View {
         Form {
@@ -558,10 +565,65 @@ private struct SettingsView: View {
                     }
                 }
             }
+            Section(L10n.text("permissions.title", fallback: "Permissions")) {
+                Text(L10n.text(
+                    "permissions.intro",
+                    fallback: "Bridgey asks for access only when a feature needs it. Denying optional access turns off only that feature."
+                ))
+                .font(.caption).foregroundStyle(.secondary)
+                permissionRow(
+                    L10n.text("permissions.localNetwork.name", fallback: "Local Network"),
+                    purpose: L10n.text(
+                        "permissions.localNetwork.why",
+                        fallback: "Required to find your phone and connect to it directly on your network. macOS asks the first time Bridgey looks for devices."
+                    ),
+                    state: nil,
+                    action: L10n.text("permissions.open", fallback: "Open Settings")
+                ) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")!)
+                }
+                permissionRow(
+                    L10n.text("permissions.notifications.name", fallback: "Notifications"),
+                    purpose: L10n.text(
+                        "permissions.notifications.why",
+                        fallback: "Optional. Shows Android notifications, calls, and Find Device alerts on this Mac."
+                    ),
+                    state: pairing.notificationsAuthorized,
+                    action: pairing.notificationsAuthorized || pairing.notificationPermissionDetermined
+                        ? L10n.text("permissions.open", fallback: "Open Settings")
+                        : L10n.text("permissions.allow", fallback: "Allow")
+                ) {
+                    pairing.enableNotifications()
+                }
+                permissionRow(
+                    L10n.text("permissions.automation.name", fallback: "Automation"),
+                    purpose: L10n.text(
+                        "permissions.automation.why",
+                        fallback: "Optional. Lets Bridgey control Music or Spotify after you choose a player under Media. macOS asks the first time."
+                    ),
+                    state: nil,
+                    action: L10n.text("permissions.open", fallback: "Open Settings")
+                ) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
+                }
+                Text(L10n.text(
+                    "permissions.notUsed",
+                    fallback: "Bridgey does not use location, contacts, camera, microphone, screen recording, Accessibility, Input Monitoring, or Full Disk Access."
+                ))
+                .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Diagnostics") {
                 Text("Exports a bounded event log without clipboard text, notification content, file names, addresses, or device identifiers.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Export Diagnostics…") { pairing.exportDiagnostics() }
+            }
+            Section(L10n.text("reset.title", fallback: "Reset Bridgey on this Mac")) {
+                Text(L10n.text(
+                    "reset.summary",
+                    fallback: "Deletes paired phones, settings, notification history, and the transfer list on this Mac."
+                ))
+                .font(.caption).foregroundStyle(.secondary)
+                Button(L10n.text("reset.button", fallback: "Reset Bridgey…"), role: .destructive) { confirmingReset = true }
             }
             Text("Bridgey communicates directly over your local network. Clipboard, files, and notification content are encrypted in transit.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -569,6 +631,19 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .padding(10)
         .frame(width: 560, height: 620)
+        .alert(L10n.text("reset.confirmTitle", fallback: "Reset Bridgey on this Mac?"), isPresented: $confirmingReset) {
+            Button(L10n.text("reset.confirm", fallback: "Reset"), role: .destructive) {
+                pairing.resetLocalData()
+                discovery.updateDeviceName(settings.deviceName)
+                editedName = settings.deviceName
+            }
+            Button(L10n.text("reset.cancel", fallback: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.text(
+                "reset.confirmMessage",
+                fallback: "Deleted: paired phones and their keys, all settings and per-device choices, keyboard shortcuts, media settings, notification history, mirrored notifications in Notification Center, and the transfer list. The welcome guide shows again.\n\nKept: received files, this Mac’s identity, and launch at login. Your phones keep their record of this Mac until you forget it there."
+            ))
+        }
         .onAppear {
             editedName = settings.deviceName
             pairing.refreshNotificationAuthorization()
@@ -579,6 +654,32 @@ private struct SettingsView: View {
     private var connectedDeviceID: String? {
         if case let .connected(deviceID, _) = pairing.state { return deviceID }
         return nil
+    }
+
+    /// One optional or required permission: what it is for, whether it is allowed when Bridgey can tell,
+    /// and a button that opens the matching System Settings pane.
+    private func permissionRow(
+        _ name: String,
+        purpose: String,
+        state allowed: Bool?,
+        action: String,
+        perform: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                Text(purpose).font(.caption).foregroundStyle(.secondary)
+                if let allowed {
+                    Text(allowed
+                        ? L10n.text("permissions.allowed", fallback: "Allowed")
+                        : L10n.text("permissions.notAllowed", fallback: "Not allowed"))
+                        .font(.caption2)
+                        .foregroundStyle(allowed ? Color.green : Color.secondary)
+                }
+            }
+            Spacer()
+            Button(action, action: perform)
+        }
     }
 
     private func makeDefaultPhoneLinkHandler() {
