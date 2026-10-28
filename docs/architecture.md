@@ -93,6 +93,49 @@ authenticated device IDs; the lower ID initiates, while either side may accept.
 Duplicate connections are closed after authentication. Backoff uses full jitter
 with a 1 second base and 60 second cap, and resets after 30 seconds of stability.
 
+## Multiple devices
+
+A client keeps a session registry instead of a single session. Sessions that
+are still handshaking or waiting for a pairing code are pending; an
+authenticated session is stored under the peer's device ID, at most one per
+device. Each session keeps its own key, replay window, quick-request sequence,
+handshake timeout and heartbeat, so nothing crosses from one device to another.
+
+When a second session authenticates for a device that already has one, the
+duplicate rule decides which survives: keep the session dialled by the device
+with the lower ID; if both were dialled by the same side, keep the newer one.
+Both ends apply the same rule, so they close the same socket. A new connection
+never closes an existing session before it authenticates.
+
+Only one pairing code is shown at a time. A pairing the user starts replaces an
+earlier one the user started; an unknown device that asks to pair while another
+code is waiting for confirmation receives `pairing.cancel`. Trusted reconnects
+skip the code and never disturb the pairing in progress or other devices.
+
+Per-device state (the peer's `features.update`, battery, ringing, reconnect
+backoff and endpoint) lives with the device's registry entry. Messages are
+routed by these rules:
+
+- **To every connected device where the feature is available:** the local
+  feature state (each device gets its own effective per-device settings),
+  battery, Mac media state, and Android notifications and their removals.
+- **To the session a request came from:** acknowledgements, results, browse
+  answers, notification actions, and both sides of an incoming transfer.
+- **To the selected device:** actions the user starts (clipboard, files and
+  folders, browsing, ping, Find device, calls, links). The UI lets the user
+  pick the device; until then it is the most recently connected one.
+
+Each file transfer belongs to the device it was offered to or received from.
+The outgoing queue stays sequential across devices; every entry remembers its
+device. When a device disconnects, only its transfers are interrupted (and stay
+retryable for that device); transfers with other devices continue.
+
+Features with one global surface keep one target. The Mac call panel shows the
+latest call from any phone and sends its actions to that phone. Local Find
+device ringing starts when any device asks; stopping it also tells every
+device that is ringing. The Mac media controller accepts commands from every
+phone with Media enabled. Android shows the media state of the selected Mac.
+
 ## MVP plugin behavior
 
 - **Battery:** Android publishes percentage and charging state after an

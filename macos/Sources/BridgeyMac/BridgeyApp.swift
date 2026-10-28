@@ -190,6 +190,10 @@ private struct BridgeyPanel: View {
                 if pairing.isFeatureAvailable(.files) {
                     actionButton("File", icon: "paperplane") { pairing.chooseAndSendFile() }
                 }
+                if pairing.isFeatureAvailable(.files) && pairing.isFeatureAvailable(.filesBrowse) {
+                    actionButton(L10n.text("browse.action", fallback: "Phone"), icon: "folder") { pairing.showPhoneFolderBrowser() }
+                        .help(L10n.text("browse.action.help", fallback: "Browse folders shared on Android"))
+                }
                 if pairing.isFeatureAvailable(.findDevice) {
                     actionButton(
                         pairing.macRinging || pairing.androidRinging ? "Stop" : "Ring",
