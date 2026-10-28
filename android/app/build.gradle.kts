@@ -58,6 +58,8 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for JVM tests; Android's copy is a stub outside a device.
+    testImplementation("org.json:json:20260814")
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

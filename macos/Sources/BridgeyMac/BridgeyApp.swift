@@ -475,6 +475,7 @@ private struct SettingsView: View {
                         set: {
                             settings.setGlobal(feature, enabled: $0)
                             if feature == .findDevice && !$0 { pairing.stopFinding() }
+                            if feature == .remoteInput && $0 { requestAccessibilityIfUsable() }
                         }
                     ))
                 }
@@ -496,6 +497,7 @@ private struct SettingsView: View {
             }
             MediaSettingsView(media: pairing.mediaController)
             ShortcutSettingsView(shortcuts: pairing.shortcuts)
+            RemoteControlSettingsView(host: pairing.remoteInput, audit: pairing.remoteInput.audit, settings: settings)
             Section("Notification history") {
                 Toggle("Keep a private local history", isOn: Binding(
                     get: { settings.notificationHistoryEnabled },
@@ -534,15 +536,13 @@ private struct SettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(BridgeyFeature.allCases) { feature in
                             Toggle(isOn: Binding(
-                                get: {
-                                    settings.globalFeatures[feature] != false &&
-                                        settings.deviceFeatures[device.id]?[feature] != false
-                                },
+                                get: { settings.isEnabled(feature, for: device.id) },
                                 set: {
                                     settings.setForDevice(device.id, feature: feature, enabled: $0)
                                     if feature == .findDevice && !$0,
                                        case let .connected(connectedID, _) = pairing.state,
                                        connectedID == device.id { pairing.stopFinding() }
+                                    if feature == .remoteInput && $0 { requestAccessibilityIfUsable() }
                                 }
                             )) {
                                 VStack(alignment: .leading, spacing: 1) {
@@ -579,6 +579,14 @@ private struct SettingsView: View {
     private var connectedDeviceID: String? {
         if case let .connected(deviceID, _) = pairing.state { return deviceID }
         return nil
+    }
+
+    /// The first time remote control becomes usable (on, and allowed for a phone), macOS is asked
+    /// for Accessibility. Never at launch and never for an incoming session.
+    private func requestAccessibilityIfUsable() {
+        let grants = settings.deviceFeatures.compactMapValues { $0[.remoteInput] }
+        guard remoteControlEffectivelyEnabled(globalEnabled: settings.globalFeatures[.remoteInput] == true, deviceGrants: grants) else { return }
+        pairing.remoteInput.remoteControlEnabled()
     }
 
     private func makeDefaultPhoneLinkHandler() {

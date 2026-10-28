@@ -261,9 +261,13 @@ Bridgey asks for access only when the related feature needs it:
   Android notification display on the Mac.
 - File access is scoped to a file selected by the user and the Bridgey receive
   directory (`Downloads/Bridgey`).
+- macOS Accessibility is optional and requested only when the user turns on
+  Remote control and allows a paired phone. macOS requires it to move the
+  pointer and type; Bridgey uses it only during a visible remote control
+  session.
 
 Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
-screen recording, Accessibility, Input Monitoring, or Full Disk Access.
+screen recording, Input Monitoring, or Full Disk Access.
 Permission denial disables only the corresponding optional integration.
 
 ## Settings
