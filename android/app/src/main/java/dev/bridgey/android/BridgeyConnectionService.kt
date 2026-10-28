@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class BridgeyConnectionService : Service() {
@@ -58,8 +59,11 @@ class BridgeyConnectionService : Service() {
         )
         startForeground(NOTIFICATION_ID, buildNotification(lastStatus))
         serviceScope.launch {
-            (application as BridgeyApplication).pairing.state.collect { state ->
-                lastStatus = when (state) {
+            val pairing = (application as BridgeyApplication).pairing
+            combine(pairing.state, pairing.connections) { state, connections -> state to connections.size }.collect { (state, count) ->
+                lastStatus = if (state is PairingState.Connected && count > 1) {
+                    resources.getQuantityString(R.plurals.notification_connected_many, count, count)
+                } else when (state) {
                     is PairingState.Connected -> "Connected to ${state.peerName}"
                     is PairingState.Connecting -> "Connecting to ${state.peerName}…"
                     is PairingState.Verification -> "Pairing confirmation required"

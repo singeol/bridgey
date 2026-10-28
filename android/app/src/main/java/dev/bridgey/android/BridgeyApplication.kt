@@ -53,28 +53,18 @@ class BridgeyApplication : Application() {
         pairing = PairingCoordinator(this, deviceId, deviceName, settings = settings)
         discovery = NsdDiscoveryService(this, LocalDiscoveryIdentity(deviceId, deviceName))
         applicationScope.launch {
-            combine(discovery.peers, pairing.trustedDeviceIds, pairing.state) { peers, trustedIds, state ->
-                Triple(peers, trustedIds, state)
-            }.collect { (peers, trustedIds, state) ->
-                if (isBridgeyEnabled && state is PairingState.Idle) {
-                    peers.firstOrNull {
-                        val peerId = it.deviceIdHint
-                        peerId != null && peerId in trustedIds && deviceId < peerId
-                    }?.let { peer ->
-                        peer.host?.let { pairing.pair(it, peer.port ?: 42_458, peer.deviceNameHint) }
-                    }
-                } else if (state is PairingState.Connected) {
-                    lastBatteryIntent?.let(::publishBattery)
+            combine(discovery.peers, pairing.trustedDeviceIds, pairing.connections) { peers, trustedIds, connections ->
+                Triple(peers, trustedIds, connections.map(ConnectedDevice::id).toSet())
+            }.collect { (peers, trustedIds, connectedIds) ->
+                if (!isBridgeyEnabled) return@collect
+                // Each trusted device is dialled on its own, also while other devices are connected.
+                autoDialTargets(peers, { it.deviceIdHint }, deviceId, trustedIds, connectedIds).forEach { (peer, peerId) ->
+                    peer.host?.let { pairing.reconnect(it, peer.port ?: 42_458, peer.deviceNameHint, peerId) }
                 }
             }
         }
         applicationScope.launch {
             settings.state.collect { lastBatteryIntent?.let(::publishBattery) }
-        }
-        applicationScope.launch {
-            pairing.remoteFeatures.collect { features ->
-                if (features[BridgeyFeature.BATTERY] != false) lastBatteryIntent?.let(::publishBattery)
-            }
         }
         if (preferences.getBoolean(PREFERENCE_ENABLED, true)) enableBridgey()
     }

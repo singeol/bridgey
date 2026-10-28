@@ -137,6 +137,11 @@ class QuickActions(
             disabled
         }
     }
+    /** The selected device changed: requests to the previous one end and its media state is hidden. */
+    @Synchronized fun targetChanged() {
+        pending.values.forEach { it.second.cancel() }; pending.clear()
+        mutableMedia.value = MacMediaState(); mutableStatus.value = null
+    }
     @Synchronized fun reset() {
         pending.values.forEach { it.second.cancel() }; pending.clear()
         mutableLink.value = null; mutableMedia.value = MacMediaState(); mutableStatus.value = null

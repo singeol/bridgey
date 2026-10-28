@@ -5,4 +5,27 @@
     <string name="welcome_title">Welcome to Bridgey</string>
     <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
     <string name="welcome_continue">Get started</string>
+    <string name="file_queued">Queued</string>
+    <string name="transfers_cancel_all">Cancel all</string>
+    <string name="folder_receiving">Receiving %1$s (%2$d/%3$d)</string>
+    <string name="folder_file_progress">%1$s (file %2$d of %3$d)</string>
+    <string name="folder_saved">%1$s saved to Download/Bridgey</string>
+    <string name="folder_saved_partly">Files saved: %1$d of %2$d, in Download/Bridgey/%3$s</string>
+    <string name="folder_received">Folder received</string>
+    <string name="shared_folders_title">Shared folders</string>
+    <string name="shared_folders_body">Your paired Mac can browse and download files from the folders you add here. Bridgey cannot see anything else on this phone.</string>
+    <string name="shared_folders_empty">No folders shared yet.</string>
+    <string name="shared_folders_add">Add folder</string>
+    <string name="shared_folders_remove">Remove</string>
+    <string name="shared_folders_uploads">Allow the Mac to add files</string>
+    <string name="shared_folders_uploads_body">Files from the Mac get a new name when one is taken. Nothing is replaced.</string>
+    <string name="devices_connected_title">Connected devices</string>
+    <string name="devices_target_hint">Clipboard, files, Ping and Ring go to the selected device.</string>
+    <string name="devices_battery">Battery %1$d%%</string>
+    <string name="devices_disconnect">Disconnect</string>
+    <string name="devices_disconnect_named">Disconnect %1$s</string>
+    <plurals name="notification_connected_many">
+        <item quantity="one">Connected to %1$d device</item>
+        <item quantity="other">Connected to %1$d devices</item>
+    </plurals>
 </resources>

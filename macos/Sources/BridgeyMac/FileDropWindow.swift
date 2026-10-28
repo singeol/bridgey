@@ -39,18 +39,24 @@ private struct FileDropView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.text("drop.title", fallback: "Drop a file here to send"))
+            Text(L10n.text("drop.title", fallback: "Drop files here to send"))
                 .font(.title2.weight(.semibold))
             Text(L10n.text("drop.detail", fallback: "This window stays open while you switch to Finder."))
                 .foregroundStyle(.secondary)
+            if pairing.connections.count > 1, case let .connected(_, name) = pairing.state {
+                Text(String(format: L10n.text("drop.target", fallback: "Files go to %@"), name))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(spacing: 10) {
                 Image(systemName: isTargeted ? "arrow.down.doc.fill" : "doc.badge.arrow.up")
                     .font(.system(size: 36))
                     .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
-                Text(canSend
-                     ? L10n.text("drop.ready", fallback: "Drop one file anywhere in this area")
-                     : L10n.text("drop.unavailable", fallback: "Connect an Android device and enable File transfer first."))
+                Text(!canSend
+                     ? L10n.text("drop.unavailable", fallback: "Connect an Android device and enable File transfer first.")
+                     : pairing.isFeatureAvailable(.folders)
+                     ? L10n.text("drop.readyFolders", fallback: "Drop files or folders anywhere in this area. They are sent one after another.")
+                     : L10n.text("drop.ready", fallback: "Drop one or more files anywhere in this area. They are sent one after another."))
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,11 +73,11 @@ private struct FileDropView: View {
                     )
             )
             .dropDestination(for: URL.self) { urls, _ in
-                guard canSend, let url = urls.first else { return false }
-                return pairing.sendDroppedFile(url)
+                guard canSend, !urls.isEmpty else { return false }
+                return pairing.sendDroppedFiles(urls)
             } isTargeted: { isTargeted = $0 }
             .accessibilityLabel("File drop area")
-            .accessibilityHint("Drop one file to send it to the connected Android device")
+            .accessibilityHint(L10n.text("drop.hint", fallback: "Drop files to send them to the connected Android device one after another"))
         }
         .padding(24)
         .frame(minWidth: 400, minHeight: 240)
