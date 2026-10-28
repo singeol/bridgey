@@ -58,6 +58,8 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM tests that read protocol/ files (android.jar has only stubs).
+    testImplementation("org.json:json:20240303")
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
