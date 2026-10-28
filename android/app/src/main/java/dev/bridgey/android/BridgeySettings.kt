@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class BridgeyFeature(val key: String, val title: String) {
     CLIPBOARD("clipboard", "Clipboard"),
     FILES("files", "File transfer"),
+    FOLDERS("folders", "Folder transfer"),
+    FILES_BROWSE("files_browse", "Browse shared folders"),
     NOTIFICATIONS("notifications", "Notification forwarding"),
     BATTERY("battery", "Battery status"),
     FIND_DEVICE("find_device", "Find Device"),
@@ -18,7 +20,14 @@ enum class BridgeyFeature(val key: String, val title: String) {
 }
 
 internal fun featureEnabledByLegacyPeer(feature: BridgeyFeature): Boolean =
-    feature !in setOf(BridgeyFeature.CALLS, BridgeyFeature.PING, BridgeyFeature.LINKS, BridgeyFeature.MEDIA)
+    feature !in setOf(
+        BridgeyFeature.CALLS,
+        BridgeyFeature.PING,
+        BridgeyFeature.LINKS,
+        BridgeyFeature.MEDIA,
+        BridgeyFeature.FOLDERS,
+        BridgeyFeature.FILES_BROWSE,
+    )
 
 data class BridgeySettingsState(
     val deviceName: String,
@@ -27,7 +36,12 @@ data class BridgeySettingsState(
     val notificationApplications: Map<String, String>,
     val disabledNotificationPackages: Set<String>,
     val directCallsEnabled: Boolean,
+    val sharedFolders: List<SharedFolder> = emptyList(),
+    val sharedFolderUploadsEnabled: Boolean = false,
 )
+
+/** A folder the user granted through the system folder picker, addressed on the wire only by [id]. */
+data class SharedFolder(val id: String, val uri: String, val name: String)
 
 internal fun effectiveFeatureEnabled(
     globalEnabled: Boolean,
@@ -103,6 +117,34 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         mutableState.value = mutableState.value.copy(directCallsEnabled = enabled)
     }
 
+    /** Remembers a granted folder; returns null when it is already shared or the limit is reached. */
+    @Synchronized
+    fun addSharedFolder(uri: String, name: String): SharedFolder? {
+        val current = mutableState.value.sharedFolders
+        if (current.size >= MAX_SHARED_FOLDERS || current.any { it.uri == uri }) return null
+        val folder = SharedFolder(java.util.UUID.randomUUID().toString(), uri, name.take(128).ifBlank { "Folder" })
+        preferences.edit()
+            .putString("$KEY_SHARED_FOLDER_URI_PREFIX${folder.id}", folder.uri)
+            .putString("$KEY_SHARED_FOLDER_NAME_PREFIX${folder.id}", folder.name)
+            .apply()
+        mutableState.value = mutableState.value.copy(sharedFolders = current + folder)
+        return folder
+    }
+
+    @Synchronized
+    fun removeSharedFolder(id: String) {
+        preferences.edit()
+            .remove("$KEY_SHARED_FOLDER_URI_PREFIX$id")
+            .remove("$KEY_SHARED_FOLDER_NAME_PREFIX$id")
+            .apply()
+        mutableState.value = mutableState.value.copy(sharedFolders = mutableState.value.sharedFolders.filterNot { it.id == id })
+    }
+
+    fun setSharedFolderUploadsEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_SHARED_FOLDER_UPLOADS, enabled).apply()
+        mutableState.value = mutableState.value.copy(sharedFolderUploadsEnabled = enabled)
+    }
+
     fun removeDevice(deviceId: String) {
         val editor = preferences.edit()
         BridgeyFeature.entries.forEach { editor.remove("device.$deviceId.${it.key}") }
@@ -134,6 +176,15 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
             notificationApplications = notificationApplications,
             disabledNotificationPackages = preferences.getStringSet(KEY_DISABLED_NOTIFICATION_PACKAGES, emptySet()).orEmpty(),
             directCallsEnabled = preferences.getBoolean(KEY_DIRECT_CALLS_ENABLED, false),
+            sharedFolders = preferences.all.keys
+                .filter { it.startsWith(KEY_SHARED_FOLDER_URI_PREFIX) }
+                .mapNotNull { key ->
+                    val id = key.removePrefix(KEY_SHARED_FOLDER_URI_PREFIX)
+                    val uri = preferences.getString(key, null) ?: return@mapNotNull null
+                    SharedFolder(id, uri, preferences.getString("$KEY_SHARED_FOLDER_NAME_PREFIX$id", null) ?: "Folder")
+                }
+                .sortedBy { it.name.lowercase() },
+            sharedFolderUploadsEnabled = preferences.getBoolean(KEY_SHARED_FOLDER_UPLOADS, false),
         )
     }
 
@@ -142,5 +193,9 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         private const val KEY_NOTIFICATION_APPLICATION_PREFIX = "notification.application."
         private const val KEY_DISABLED_NOTIFICATION_PACKAGES = "notification.disabled_packages"
         private const val KEY_DIRECT_CALLS_ENABLED = "calls.direct_enabled"
+        private const val KEY_SHARED_FOLDER_URI_PREFIX = "shared_folder.uri."
+        private const val KEY_SHARED_FOLDER_NAME_PREFIX = "shared_folder.name."
+        private const val KEY_SHARED_FOLDER_UPLOADS = "shared_folder.uploads_enabled"
+        const val MAX_SHARED_FOLDERS = 16
     }
 }

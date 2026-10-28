@@ -259,8 +259,12 @@ Bridgey asks for access only when the related feature needs it:
   encrypted connections to Android devices.
 - macOS notifications are optional and are requested only when the user enables
   Android notification display on the Mac.
-- File access is scoped to a file selected by the user and the Bridgey receive
-  directory (`Downloads/Bridgey`).
+- File access is scoped to the files and folders selected by the user and the
+  Bridgey receive directory (`Downloads/Bridgey`).
+- Android shared folders are optional. A paired Mac can browse and download
+  only from folders added under **Shared folders** in Android Settings through
+  the system folder picker, and can add files to them only after you allow it
+  there. Bridgey does not request broad storage permission.
 
 Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
 screen recording, Accessibility, Input Monitoring, or Full Disk Access.
@@ -271,8 +275,8 @@ Permission denial disables only the corresponding optional integration.
 Open **Settings** on Android or the gear menu on macOS to:
 
 - change the name advertised to nearby Bridgey devices;
-- enable Clipboard, File transfer, Notification forwarding, Battery status,
-  Find Device, and Calls from Mac globally;
+- enable Clipboard, File transfer, Folder transfer, Notification forwarding,
+  Battery status, Find Device, and Calls from Mac globally;
 - override those features for each trusted device or forget its trust record;
 - choose the macOS folder used for received files;
 - start the macOS app automatically at login.
@@ -305,6 +309,27 @@ already accepted is allowed to finish, while disabling Find Device stops a
 currently playing alert. Android received files remain in `Download/Bridgey`;
 this uses scoped `MediaStore` access and avoids requesting broad storage
 permission.
+
+You can pick or drop several files at once on either device. They are sent one
+after another as a visible queue in the transfer list: each waiting file shows
+**Queued** and can be cancelled on its own, and cancelling all transfers also
+empties the queue. A received file never replaces an existing
+one: macOS adds a number (`photo 2.jpg`) and Android lets the system add one
+(`photo (1).jpg`). Files that arrive on the Mac in quick succession are
+selected together in one Finder window.
+
+With Folder transfer enabled on both devices, folders picked or dropped on the
+Mac are sent to Android with their structure kept, as one entry in the queue.
+Android saves each folder as a new folder in `Download/Bridgey`, numbered when
+the name is taken (`Photos (1)`), so nothing existing is merged or replaced.
+Hidden files, symbolic links and empty folders are not sent or created. A
+folder is limited to 10,000 files and 2,000 subfolders.
+
+With Browse shared folders enabled on both devices, the **Phone** action in
+the Mac menu-bar panel opens a window with the folders shared on Android.
+Downloads arrive in the Mac's received-files folder like any other transfer.
+When Android allows it, **Add Files…** uploads files into the folder being
+viewed; a taken name gets a number and nothing is replaced.
 
 Recent file transfers remain visible until cleared. An outgoing transfer that
 fails or is interrupted can be retried after the devices reconnect; retrying
