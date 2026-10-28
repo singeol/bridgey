@@ -261,9 +261,15 @@ Bridgey asks for access only when the related feature needs it:
   Android notification display on the Mac.
 - File access is scoped to a file selected by the user and the Bridgey receive
   directory (`Downloads/Bridgey`).
+- Experimental screen sharing (phone to Mac, view only) is off by default on
+  both devices. Each session starts only after a tap in Bridgey and Android's
+  own screen capture confirmation; `FOREGROUND_SERVICE_MEDIA_PROJECTION` lets
+  the capture run in a foreground service whose notification shows Stop for as
+  long as the screen is shared. The Mac only displays the stream and needs no
+  Screen Recording access.
 
 Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
-screen recording, Accessibility, Input Monitoring, or Full Disk Access.
+Mac screen recording, Accessibility, Input Monitoring, or Full Disk Access.
 Permission denial disables only the corresponding optional integration.
 
 ## Settings
