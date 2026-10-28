@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>deviceID</key>
+	<string>9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b</string>
+	<key>legacyPreferencesMigrated</key>
+	<true/>
+	<key>media.pauseForCalls</key>
+	<true/>
+	<key>media.player</key>
+	<string>spotify</string>
+	<key>settings.device.3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a.media</key>
+	<false/>
+	<key>settings.device.7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d.links</key>
+	<false/>
+	<key>settings.deviceName</key>
+	<string>Test Mac</string>
+	<key>settings.global.battery</key>
+	<true/>
+	<key>settings.global.calls</key>
+	<false/>
+	<key>settings.global.clipboard</key>
+	<true/>
+	<key>settings.global.files</key>
+	<true/>
+	<key>settings.global.find_device</key>
+	<true/>
+	<key>settings.global.links</key>
+	<true/>
+	<key>settings.global.media</key>
+	<true/>
+	<key>settings.global.notifications</key>
+	<true/>
+	<key>settings.global.ping</key>
+	<true/>
+	<key>settings.notificationHistory.enabled</key>
+	<false/>
+	<key>settings.onboarding.completed</key>
+	<true/>
+	<key>settings.receiveFolderPath</key>
+	<string>/Users/test/Downloads/Bridgey</string>
+	<key>shortcuts.call</key>
+	<string>P</string>
+	<key>shortcuts.clipboard</key>
+	<string>V</string>
+	<key>shortcuts.link</key>
+	<string>L</string>
+	<key>shortcuts.ping</key>
+	<string>Off</string>
+	<key>shortcuts.shift</key>
+	<true/>
+</dict>
+</plist>

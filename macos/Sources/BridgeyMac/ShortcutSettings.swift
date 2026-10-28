@@ -20,12 +20,14 @@ final class ShortcutSettings: ObservableObject {
     @Published private(set) var useShift: Bool
     @Published private(set) var error: String?
     private var registered: [GlobalHotKey] = []
+    private let defaults: UserDefaults
     var perform: (ShortcutAction) -> Void = { _ in }
 
-    init() {
-        useShift = UserDefaults.standard.bool(forKey: "shortcuts.shift")
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        useShift = defaults.bool(forKey: "shortcuts.shift")
         for action in ShortcutAction.allCases {
-            keys[action] = UserDefaults.standard.string(forKey: "shortcuts.\(action.rawValue)") ?? action.defaultKey
+            keys[action] = defaults.string(forKey: "shortcuts.\(action.rawValue)") ?? action.defaultKey
         }
     }
     func setKey(_ key: String, for action: ShortcutAction) {
@@ -34,11 +36,11 @@ final class ShortcutSettings: ObservableObject {
             error = "That shortcut is already assigned to another Bridgey action"; return
         }
         keys[action] = key
-        UserDefaults.standard.set(key, forKey: "shortcuts.\(action.rawValue)")
+        defaults.set(key, forKey: "shortcuts.\(action.rawValue)")
         register()
     }
     func setShift(_ value: Bool) {
-        useShift = value; UserDefaults.standard.set(value, forKey: "shortcuts.shift"); register()
+        useShift = value; defaults.set(value, forKey: "shortcuts.shift"); register()
     }
     func register() {
         registered.removeAll(); error = nil

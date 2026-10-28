@@ -1238,15 +1238,15 @@ final class PairingCoordinator: ObservableObject {
                       current.acceptMessageID(messageID),
                       let nonce = message.nonce,
                       let ciphertext = message.ciphertext,
-                      let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
-                      let payload = try? JSONDecoder().decode(FeatureStatePayload.self, from: plaintext),
-                      payload.version == 1,
-                      BridgeyFeature.allCases.filter(featureEnabledByLegacyPeer).allSatisfy({ payload.features[$0.rawValue] != nil }) else {
+                      let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!) else {
                     throw PairingError.invalidMessage
                 }
-                remoteFeatures = Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map {
-                    ($0, payload.features[$0.rawValue] ?? false)
-                })
+                // Unknown keys are ignored and an unknown version keeps the previous state, as on Android.
+                switch decodeFeatureState(plaintext) {
+                case .invalid: throw PairingError.invalidMessage
+                case .ignored: return
+                case let .state(features): remoteFeatures = features
+                }
                 remoteFeatureStateReceived = true
                 if !isFeatureAvailable(.links) { quickActions.reset() }
                 mediaController.reset()
@@ -1295,8 +1295,7 @@ final class PairingCoordinator: ObservableObject {
                 let text: String
                 let html: String?
                 if message.kind == "clipboard.rich" {
-                    guard let payload = try? JSONDecoder().decode(RichClipboardContent.self, from: plaintext),
-                          let content = payload.validated() else { throw PairingError.invalidMessage }
+                    guard let content = decodeRichClipboard(plaintext) else { throw PairingError.invalidMessage }
                     text = content.text
                     html = content.html
                 } else {
@@ -1341,11 +1340,10 @@ final class PairingCoordinator: ObservableObject {
                       let nonce = message.nonce,
                       let ciphertext = message.ciphertext,
                       let plaintext = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: current.pairingKey!),
-                      let payload = try? JSONDecoder().decode(BatteryPayload.self, from: plaintext),
-                      (0...100).contains(payload.level) else {
+                      let payload = decodeBatteryStatus(plaintext) else {
                     throw PairingError.invalidMessage
                 }
-                remoteBattery = RemoteBatteryStatus(level: payload.level, isCharging: payload.isCharging)
+                remoteBattery = payload
                 NSLog("PLUGIN battery received level=%d charging=%@", payload.level, String(payload.isCharging))
             case "notifications.post":
                 guard featureEnabled(.notifications, current: current) else { return }
@@ -2027,8 +2025,8 @@ private final class Session {
     var heartbeatSupported = false
     var onMessage: ((PairingMessage) -> Void)?
     var onFailure: (() -> Void)?
-    private var buffer = Data()
-    private var seenMessageIDs = Set<String>()
+    private var frames = ProtocolFrameReader()
+    private var seenMessageIDs = ReplayWindow()
     var quickSequence = QuickRequestSequence()
 
     init(connection: NWConnection, peerName: String) {
@@ -2059,12 +2057,10 @@ private final class Session {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, error in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if let data { self.buffer.append(data) }
-                while let newline = self.buffer.firstIndex(of: 0x0A) {
-                    let line = self.buffer[..<newline]
-                    self.buffer.removeSubrange(...newline)
+                if let data { self.frames.append(data) }
+                while true {
                     do {
-                        let message = try decodeProtocolMessage(Data(line))
+                        guard let message = try self.frames.next() else { break }
                         self.lastReceivedAt = Date()
                         self.onMessage?(message)
                     } catch {
@@ -2074,7 +2070,7 @@ private final class Session {
                         return
                     }
                 }
-                guard self.buffer.count <= maximumProtocolFrameBytes else {
+                guard !self.frames.overLimit else {
                     NSLog("TRANSPORT protocol frame exceeded size limit")
                     self.close()
                     self.onFailure?()
@@ -2087,11 +2083,7 @@ private final class Session {
 
     func close() { connection.cancel() }
 
-    func acceptMessageID(_ id: String) -> Bool {
-        guard seenMessageIDs.insert(id).inserted else { return false }
-        if seenMessageIDs.count > 256 { seenMessageIDs.remove(seenMessageIDs.first!) }
-        return true
-    }
+    func acceptMessageID(_ id: String) -> Bool { seenMessageIDs.accept(id) }
 }
 
 struct PairingMessage: Codable {
