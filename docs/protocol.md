@@ -93,11 +93,12 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, and `media`. A UI action is
+`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, and `media`, plus the
+optional `remote_input`. A UI action is
 available only when both peers report the corresponding feature as enabled. Clients
 predating this message are treated as enabling the original v1 features for
-compatibility; the later `calls`, `ping`, `links`, and `media` features are disabled unless a peer
-advertises them explicitly.
+compatibility; the later `calls`, `ping`, `links`, `media`, and `remote_input` features are disabled
+unless a peer advertises them explicitly.
 
 ## Pairing flow
 
@@ -319,6 +320,132 @@ action tokens. Bridgey uses the platform telecom service and never starts a
 number the platform identifies as an emergency number. It does not request
 contacts or call-log access. Local feature policy is checked again immediately
 before any side effect. Number content is not logged.
+
+### Remote input (`remote_input`)
+
+Status: proposed for 0.7, experimental. Lets one device (the *controller*, an Android phone today)
+move the pointer, click, scroll, drag, type bounded text, press a small set of named keys and drive
+presentations on another (the *host*, a Mac today). The host decides everything: remote input is
+off by default, granted per paired device, visible while it runs, and can be stopped locally at any
+moment.
+
+**Negotiation.** `features.update` gains the boolean key `remote_input`. A host sets it when
+the user turned remote control on and granted it to that particular device; a missing per-device
+grant means `false`, even when the global switch is on. A controller sets it when its own remote
+control setting is on for that device. A controller offers remote control only when both peers
+advertise `true`. A missing key means `false`. Peers that cannot inject input (a phone, today)
+answer an `input.session.start` with `input.session.stop`, reason `unsupported`.
+
+**Encryption and replay.** Every message below is AES-GCM encrypted on the current authenticated
+session, like `quick.request`: outer `kind`, `sessionId`, a unique `messageId`, `nonce` and
+`ciphertext`. The plaintext is UTF-8 JSON of at most 2,048 bytes with `version: 1`, the
+`inputSessionId` (a UUID the controller chooses in `input.session.start`) and a positive integer
+`sequence` (at most 2^53-1). Receivers do **not** put input messages into the shared outer
+`messageId` window: at 120 messages a second they would push every other feature's IDs out of the
+256-entry cache within two seconds. Instead, each side keeps a sequence high-water mark per input
+session: the controller numbers its messages 1, 2, 3, ... starting with `input.session.start`, the
+host numbers its own replies the same way, and a receiver drops any message whose sequence is not
+higher than the last one it accepted. TCP keeps order, so a lower or equal sequence is a replay.
+An `inputSessionId` is used once: the host remembers the last 64 ended IDs and ignores a start that
+reuses one. Because the key belongs to one transport session, nothing replays across sessions.
+Malformed, oversized or out-of-sequence messages are dropped and counted, never answered, and never
+close the transport session.
+
+#### Session messages
+
+| Message | Direction | Plaintext fields (besides `version`, `inputSessionId`, `sequence`) |
+| --- | --- | --- |
+| `input.session.start` | controller to host | `mode`: `touchpad` or `presentation` (informational; either mode may send any input) |
+| `input.session.started` | host to controller | `heartbeatSeconds` (2), `idleSeconds` (6), `limits`: `{ "motion": 120, "discrete": 20, "text": 256 }` |
+| `input.session.heartbeat` | controller to host | none |
+| `input.session.stop` | either | `reason` (below) |
+
+The controller sends `input.session.heartbeat` every 2 seconds while its remote control screen is
+open, even without input, and gives up if `input.session.started` does not arrive within 5 seconds.
+The host ends the session after 6 seconds without a valid input message or heartbeat. One session
+runs at a time on a host; the host accepts at most one `input.session.start` per second from a
+device. A start from the device that already controls the host replaces its session; a start from
+another device is refused with `busy`.
+
+| `reason` | Sent by | Meaning |
+| --- | --- | --- |
+| `user` | controller | the person tapped Stop |
+| `left_screen` | controller | the remote control screen closed or the app went to the background |
+| `screen_off` | controller | the controller's screen turned off |
+| `local_stop` | host | stopped on the host (its Stop button or stop shortcut) |
+| `timeout` | host | 6 seconds without input or a heartbeat |
+| `disabled` | host | remote control is off on the host, or not granted to this device |
+| `permission_required` | host | the operating system has not allowed the host to inject input (macOS Accessibility) |
+| `busy` | host | another device is controlling the host |
+| `invalid` | host | the start was malformed or asked for an unknown mode |
+| `unsupported` | host | this peer cannot be controlled |
+
+A host refuses a start by sending `input.session.stop` with the start's `inputSessionId`. When the
+transport session closes, both sides end the input session locally (reason `disconnected`, never
+sent). Ending a session releases every mouse button the host still holds and hides the laser.
+
+#### Input messages (controller to host)
+
+| Message | Fields | Bounds |
+| --- | --- | --- |
+| `input.pointer` | `dx`, `dy` | integers, -512 to 512 each, not both 0. Relative movement in host points, already scaled for the controller's pointer speed. The controller sums movement per frame (at most 60 a second) and splits a larger move into several messages |
+| `input.button` | `button`: `left`, `right` or `middle`; `action`: `down` or `up` | an `up` without a matching `down` is ignored; a held button is released when the session ends |
+| `input.scroll` | `dx`, `dy`, `unit`: `pixel` (precise) or `line` | integers, not both 0; pixel -1,000 to 1,000, line -10 to 10. How far the content moves, positive right and down, so with natural scrolling the content follows the fingers |
+| `input.drag` | `phase`: `start`, `move` or `end`; `dx`, `dy` with `move` | `start` presses the left button where the pointer is, `move` follows the pointer bounds, `end` releases |
+| `input.text` | `text` | 1 to 256 Unicode scalar values and at most 1,024 UTF-8 bytes, no control characters (Unicode category Cc; Return and Tab are keys). Typed as text, never as shortcuts. **Never logged or stored** |
+| `input.key` | `key`; optional `modifiers` | see the allowlist below |
+| `input.present` | `action`; `x`, `y` for the laser | see below |
+
+**Key allowlist.** `key` is one of `left`, `right`, `up`, `down`, `return`, `escape`, `tab`,
+`space`, `backspace`, `page_up`, `page_down`, `home`, `end`, `f5`, or the semantic `previous_app`
+(switch to the most recent other app; macOS Command-Tab). `modifiers` may be absent, empty, or
+`["shift"]`, and Shift may not combine with `previous_app`. There is no other modifier on the wire,
+so a controller cannot send Command, Control or Option shortcuts. One message is one press and
+release; holding a key on the controller sends repeated messages within the rate limit.
+
+**Presentation actions.** `next` and `previous` press Page Down and Page Up, like presentation
+clickers. `start` plays the slideshow from the current slide in the host's frontmost presentation
+app (on macOS: Keynote Option-Command-P; PowerPoint and Google Slides in a browser Command-Return;
+any other app enters full screen with Control-Command-F). `end` presses Escape. `black` presses B,
+which blacks out the screen in Keynote, PowerPoint and Google Slides. `laser_on` and `laser_move`
+carry `x` and `y` (integers 0 to 10,000, a fraction of the display that held the pointer when the
+laser turned on, origin top left) and show a dot the host draws in its own click-through overlay;
+the real pointer does not move. `laser_off` hides it. The host maps these actions itself, so the
+controller never chooses key codes.
+
+**Rate limits.** Hosts apply token buckets per session and drop and count what exceeds them:
+*motion* (`input.pointer`, `input.scroll`, `input.drag` move, `laser_move`) 120 messages a second;
+*discrete* (`input.button`, `input.key`, `input.text`, `input.drag` start and end, other
+`input.present` actions) 20 messages a second; *control* (`input.session.heartbeat`,
+`input.session.stop`) 10 messages a second. Each bucket holds one second's worth, so a short burst
+passes. Controllers apply the same limits before sending.
+
+#### Host obligations
+
+- Ask the operating system for input injection rights only after the user turns remote control on,
+  explaining why, and refuse sessions with `permission_required` while the right is missing.
+- Show a visible indicator for the whole session, naming the controlling device, with a Stop control
+  that does not need the controller, plus a local keyboard shortcut that the wire cannot send
+  (macOS: Control-Option-Escape).
+- Keep a private, local audit log of sessions and refused starts: device, start and end time, the
+  end reason and the number of messages of each type. Never text, key names or positions.
+- Clamp the pointer to the union of the displays, so it cannot leave every screen.
+
+#### Security review
+
+| Threat | Mitigations |
+| --- | --- |
+| A stolen or borrowed phone controls the Mac | Remote control is off by default and granted per paired device on the Mac; the phone must also be unlocked and paired (pinned identity). Every session shows the indicator with the device's name; the Mac user can stop it from the pill, the shortcut or Settings, and revoke the grant or Forget the device. The audit log shows who connected and when |
+| Another device on the network injects or replays input | Only an authenticated session with the pinned identity key can send; payloads are AES-GCM encrypted with the session key. The per-session sequence rejects replays inside a session, the session key rejects them across sessions, and used `inputSessionId`s are not accepted again |
+| Dangerous shortcuts (quit, force quit, lock, Spotlight, empty Trash, screenshots, clipboard) | No modifier except Shift exists on the wire; keys come from a fixed list and presentation actions are mapped by the host. Typed text goes through the text path, never as key codes, so it cannot trigger shortcuts |
+| Keylogging-like misuse | The host injects input; it never captures or returns keystrokes, screen content or clipboard. The controller only receives session state. Typed text is never logged or stored on either side |
+| A flood of input, or a stuck button | Token buckets drop excess input; buttons are released and the laser hidden on stop, timeout, disconnect and any policy change |
+| Remote control left running unnoticed | A 6 second idle timeout without heartbeats; the controller stops when its screen closes, turns off or disconnects; the host's indicator stays on top of full-screen apps |
+
+Remote control is as powerful as someone typing at the keyboard: with the pointer and text a
+determined controller can reach any app. The allowlist keeps it from acting faster than the person
+watching the indicator can react; the grant, the indicator, the local stop and the audit log are the
+real protections. Hosts must not offer arbitrary shortcuts by default.
 
 ## Compatibility
 

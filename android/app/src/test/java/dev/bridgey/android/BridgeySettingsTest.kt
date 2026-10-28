@@ -1,5 +1,6 @@
 package dev.bridgey.android
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,5 +31,13 @@ class BridgeySettingsTest {
         assertFalse(featureEnabledByLegacyPeer(BridgeyFeature.CALLS))
         assertFalse(featureEnabledByLegacyPeer(BridgeyFeature.PING))
         assertTrue(featureEnabledByLegacyPeer(BridgeyFeature.BATTERY))
+    }
+
+    @Test
+    fun remoteInputIsOffByDefaultAndForLegacyPeers() {
+        assertEquals("remote_input", BridgeyFeature.REMOTE_INPUT.key)
+        assertFalse(featureEnabledByLegacyPeer(BridgeyFeature.REMOTE_INPUT))
+        assertFalse(featureOnByDefault(BridgeyFeature.REMOTE_INPUT))
+        assertTrue(featureOnByDefault(BridgeyFeature.CLIPBOARD))
     }
 }

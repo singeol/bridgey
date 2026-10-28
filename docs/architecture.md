@@ -130,6 +130,13 @@ with a 1 second base and 60 second cap, and resets after 30 seconds of stability
   floating panel so Answer, Decline, and Hang Up remain directly visible rather
   than being collapsed into the system notification action menu. Ordinary
   mirrored notifications continue to use `UserNotifications`.
+- **Remote input (0.7, experimental):** the Mac hosts one remote input session
+  at a time from a paired phone that the user allowed on this Mac. Input is
+  validated, sequenced and rate limited before macOS events are posted, and
+  only named keys plus Shift exist on the wire. A non-activating pill names
+  the controlling phone with Stop, Control-Option-Escape stops it locally, and
+  a private 30-day log keeps counts and end reasons, never typed text. macOS
+  Accessibility is requested only when the user turns the feature on.
 
 ## Platform lifecycle
 

@@ -183,6 +183,8 @@ final class PairingCoordinator: ObservableObject {
     let quickActions = QuickActions()
     let mediaController = MediaController()
     let shortcuts = ShortcutSettings()
+    /// Remote input: the paired phone as touchpad and keyboard, only when allowed here.
+    let remoteInput = RemoteInputHost.live()
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -280,6 +282,15 @@ final class PairingCoordinator: ObservableObject {
         mediaController.onState = { [weak self] in
             _ = self?.sendQuickPayload(kind: "media.state", payload: $0)
         }
+        remoteInput.isAllowed = { [weak self] deviceID in
+            guard let self, let current = self.session, case .connected = self.state,
+                  current.remoteDeviceID == deviceID else { return false }
+            return self.isFeatureAvailable(.remoteInput)
+        }
+        remoteInput.send = { [weak self] deviceID, kind, payload in
+            guard let self, self.session?.remoteDeviceID == deviceID else { return false }
+            return self.sendQuickPayload(kind: kind, payload: payload)
+        }
         shortcuts.perform = { [weak self] action in
             switch action {
             case .clipboard: self?.sendClipboard()
@@ -314,6 +325,7 @@ final class PairingCoordinator: ObservableObject {
                         self.clearNotificationHistory()
                     }
                     self.sendFeatureState()
+                    self.remoteInput.policyChanged()
                     self.mediaController.refresh()
                     self.publishLocalBattery(force: true)
                 }
@@ -386,6 +398,7 @@ final class PairingCoordinator: ObservableObject {
         current.localEphemeralKey = current.privateKey!.publicKey.x963Representation.base64EncodedString()
         session?.close()
         session = current
+        remoteInput.connectionClosed()
         remoteBattery = nil
         clearPingStatus()
         quickActions.reset()
@@ -436,6 +449,7 @@ final class PairingCoordinator: ObservableObject {
         heartbeatWorkItem?.cancel()
         let current = session
         session = nil
+        remoteInput.connectionClosed()
         current?.send(PairingMessage(kind: "pairing.cancel", sessionId: current?.id ?? ""))
         current?.close()
         stopMacSound()
@@ -458,6 +472,7 @@ final class PairingCoordinator: ObservableObject {
         heartbeatWorkItem?.cancel()
         let current = session
         session = nil
+        remoteInput.connectionClosed()
         current?.close()
         stopMacSound()
         androidRinging = false
@@ -766,6 +781,15 @@ final class PairingCoordinator: ObservableObject {
         } else {
             quickActions.receive(message.kind, payload: payload)
         }
+    }
+
+    /// Remote input: decrypted here, checked and sequenced by the host. These high-rate messages
+    /// skip the shared message-ID window (see docs/protocol.md) and never close the session.
+    private func receiveRemoteInput(_ message: PairingMessage, in current: Session) {
+        guard session === current, case .connected = state, message.sessionId == current.id,
+              let key = current.pairingKey, let nonce = message.nonce, let ciphertext = message.ciphertext,
+              let data = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: key) else { return }
+        remoteInput.receive(kind: message.kind, payload: data, deviceID: current.remoteDeviceID, deviceName: current.peerName)
     }
 
     private func publishLocalBattery(force: Bool = false) {
@@ -1086,6 +1110,7 @@ final class PairingCoordinator: ObservableObject {
         let current = Session(connection: connection, peerName: "Android device")
         current.initiatedLocally = false
         session = current
+        remoteInput.connectionClosed()
         remoteBattery = nil
         clearPingStatus()
         quickActions.reset()
@@ -1106,6 +1131,7 @@ final class PairingCoordinator: ObservableObject {
             guard let self, self.session === current else { return }
             self.connectionTimeoutWorkItem?.cancel()
             self.heartbeatWorkItem?.cancel()
+            self.remoteInput.connectionClosed()
             self.cancelIncomingFiles()
             self.clearClipboardSendStatus()
             self.clearCallStatus()
@@ -1147,6 +1173,7 @@ final class PairingCoordinator: ObservableObject {
                     self.connectionTimeoutWorkItem?.cancel()
                     self.heartbeatWorkItem?.cancel()
                     self.session = nil
+                    self.remoteInput.connectionClosed()
                     self.clearPingStatus()
                     self.quickActions.reset()
                     self.mediaController.reset()
@@ -1264,6 +1291,7 @@ final class PairingCoordinator: ObservableObject {
                     stopMacSound()
                     androidRinging = false
                 }
+                remoteInput.policyChanged()
                 flushPendingCallIfPossible()
                 publishLocalBattery(force: true)
             case "ping.request":
@@ -1554,6 +1582,8 @@ final class PairingCoordinator: ObservableObject {
                 if let transferID = message.transferId, let sequence = message.sequence {
                     outgoingFiles[transferID]?.acknowledge(sequence: sequence)
                 }
+            case let kind where kind.hasPrefix("input."):
+                receiveRemoteInput(message, in: current)
             default:
                 break
             }

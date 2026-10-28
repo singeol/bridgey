@@ -9,7 +9,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -132,6 +135,7 @@ class MainActivity : ComponentActivity() {
                     discovery = discovery,
                     pairing = pairing,
                     settings = bridgey.settings,
+                    remoteInput = bridgey.remoteInput,
                     onDeviceNameChanged = bridgey::updateDeviceName,
                     appNotificationsEnabled = appNotificationsEnabled,
                     notificationAccessEnabled = notificationAccessEnabled,
@@ -163,6 +167,19 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshPermissionState()
     }
+
+    /** While the slides remote shows (and Settings allows it), the volume keys change slides. */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val handler = VolumeKeyRouter.handler
+        if (handler == null || !isVolumeKey(keyCode)) return super.onKeyDown(keyCode, event)
+        if (event.repeatCount == 0) handler(keyCode == KeyEvent.KEYCODE_VOLUME_UP)
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        if (VolumeKeyRouter.handler != null && isVolumeKey(keyCode)) true else super.onKeyUp(keyCode, event)
+
+    private fun isVolumeKey(keyCode: Int) = keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -295,6 +312,7 @@ private fun BridgeyApp(
     discovery: NsdDiscoveryService,
     pairing: PairingCoordinator,
     settings: BridgeySettings,
+    remoteInput: RemoteInputController,
     onDeviceNameChanged: (String) -> Unit,
     appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
@@ -323,6 +341,9 @@ private fun BridgeyApp(
     val settingsState by settings.state.collectAsStateWithLifecycle()
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
     var showingSettings by remember { mutableStateOf(false) }
+    // The Mac being controlled from the remote control screen: (device ID, name).
+    var remoteDevice by remember { mutableStateOf<Pair<String, String>?>(null) }
+    BackHandler(enabled = remoteDevice != null) { remoteDevice = null }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -335,15 +356,29 @@ private fun BridgeyApp(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showingSettings = !showingSettings }) {
-                        Text(if (showingSettings) "Done" else "Settings")
+                    if (remoteDevice != null) {
+                        TextButton(onClick = { remoteDevice = null }) { Text(stringResource(R.string.remote_done)) }
+                    } else {
+                        TextButton(onClick = { showingSettings = !showingSettings }) {
+                            Text(if (showingSettings) "Done" else "Settings")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
     ) { padding ->
-        if (showingSettings) {
+        val remote = remoteDevice
+        if (remote != null) {
+            RemoteControlRoute(
+                deviceId = remote.first,
+                deviceName = remote.second,
+                controller = remoteInput,
+                pointerSpeed = settingsState.remotePointerSpeed,
+                volumeKeys = settingsState.remoteVolumeKeys,
+                modifier = Modifier.padding(padding),
+            )
+        } else if (showingSettings) {
             SettingsScreen(
                 state = settingsState,
                 trustedDevices = trustedDevices,
@@ -378,6 +413,8 @@ private fun BridgeyApp(
                 },
                 onForget = pairing::forget,
                 onExportDiagnostics = onExportDiagnostics,
+                onRemotePointerSpeedChanged = settings::setRemotePointerSpeed,
+                onRemoteVolumeKeysChanged = settings::setRemoteVolumeKeys,
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -407,6 +444,9 @@ private fun BridgeyApp(
                     else permissionPrompt = PermissionPrompt.NotificationForwarding
                 },
                 onTurnOff = onTurnOff,
+                onRemoteControl = {
+                    (pairingState as? PairingState.Connected)?.let { remoteDevice = it.deviceId to it.peerName }
+                },
                 modifier = Modifier.padding(padding),
             )
         }
@@ -553,6 +593,8 @@ private fun SettingsScreen(
     onDirectCallsChanged: (Boolean) -> Unit,
     onForget: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
+    onRemotePointerSpeedChanged: (Int) -> Unit,
+    onRemoteVolumeKeysChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editedName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
@@ -617,6 +659,17 @@ private fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+
+        if (state.globalFeatures[BridgeyFeature.REMOTE_INPUT] == true) {
+            item {
+                RemoteControlSettingsCard(
+                    state.remotePointerSpeed,
+                    onRemotePointerSpeedChanged,
+                    state.remoteVolumeKeys,
+                    onRemoteVolumeKeysChanged,
+                )
             }
         }
 
@@ -709,6 +762,54 @@ private val CALL_INTEGRATION_PERMISSIONS = arrayOf(
     Manifest.permission.ANSWER_PHONE_CALLS,
 )
 
+/** Remote control on this phone: pointer speed, volume keys for slides, and what the Mac must allow. */
+@Composable
+private fun RemoteControlSettingsCard(
+    pointerSpeed: Int,
+    onPointerSpeedChanged: (Int) -> Unit,
+    volumeKeys: Boolean,
+    onVolumeKeysChanged: (Boolean) -> Unit,
+) {
+    val speedLabels = listOf(
+        R.string.remote_speed_1, R.string.remote_speed_2, R.string.remote_speed_3, R.string.remote_speed_4, R.string.remote_speed_5,
+    )
+    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(R.string.remote_settings_title), fontWeight = FontWeight.Medium)
+            Text(
+                stringResource(R.string.remote_settings_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.remote_speed_title), modifier = Modifier.weight(1f))
+                Text(
+                    stringResource(speedLabels[(pointerSpeed - 1).coerceIn(speedLabels.indices)]),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Slider(
+                value = pointerSpeed.toFloat(),
+                onValueChange = { onPointerSpeedChanged(Math.round(it)) },
+                valueRange = REMOTE_POINTER_SPEEDS.first.toFloat()..REMOTE_POINTER_SPEEDS.last.toFloat(),
+                steps = REMOTE_POINTER_SPEEDS.last - REMOTE_POINTER_SPEEDS.first - 1,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(stringResource(R.string.remote_volume_keys_title))
+                    Text(
+                        stringResource(R.string.remote_volume_keys_detail),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = volumeKeys, onCheckedChange = onVolumeKeysChanged)
+            }
+        }
+    }
+}
+
 @Composable
 private fun FeatureToggle(title: String, enabled: Boolean, onChanged: (Boolean) -> Unit) {
     Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
@@ -737,6 +838,7 @@ private fun DeviceScreen(
     onAppNotifications: () -> Unit,
     onNotificationForwarding: () -> Unit,
     onTurnOff: () -> Unit,
+    onRemoteControl: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(pairing::sendFile) }
@@ -770,6 +872,17 @@ private fun DeviceScreen(
                 item {
                     QuickActionsCard(pairing.quickActions, enabledFeatures[BridgeyFeature.LINKS] == true,
                         enabledFeatures[BridgeyFeature.MEDIA] == true)
+                }
+            }
+            if (enabledFeatures[BridgeyFeature.REMOTE_INPUT] == true) {
+                item {
+                    ServiceCard(
+                        enabled = true,
+                        title = stringResource(R.string.remote_entry_title),
+                        detail = stringResource(R.string.remote_entry_detail),
+                        action = stringResource(R.string.remote_entry_open),
+                        onClick = onRemoteControl,
+                    )
                 }
             }
         } else {

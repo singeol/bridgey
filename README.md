@@ -261,9 +261,13 @@ Bridgey asks for access only when the related feature needs it:
   Android notification display on the Mac.
 - File access is scoped to a file selected by the user and the Bridgey receive
   directory (`Downloads/Bridgey`).
+- macOS Accessibility is optional and requested only when the user turns on
+  Remote control and allows a paired phone. macOS requires it to move the
+  pointer and type; Bridgey uses it only during a visible remote control
+  session.
 
 Bridgey does not request location, contacts, SMS, call-log, camera, microphone,
-screen recording, Accessibility, Input Monitoring, or Full Disk Access.
+screen recording, Input Monitoring, or Full Disk Access.
 Permission denial disables only the corresponding optional integration.
 
 ## Settings
@@ -292,6 +296,16 @@ Bridgey can also handle `tel:` links from browsers. In macOS Settings, press
 **Use Bridgey for phone links** once; this explicit action makes Bridgey the
 default phone-link handler. Browsers still show their external-application
 confirmation before opening Bridgey and sending the validated number.
+
+Remote control is off by default on both devices. To use the phone as a
+touchpad, keyboard, or slides remote, turn on **Mac remote control** on Android
+and **Remote control** on the Mac, then allow that phone under the Mac's
+**Paired devices**. The Mac asks for Accessibility access the first time remote
+control becomes usable. While a phone is in control, a pill at the top of the
+Mac screen names it; press **Stop** there or `Control-Option-Escape` to end the
+session at any time. Only a short list of named keys plus Shift can be sent, so
+shortcuts such as Quit or Lock never cross the connection. The Mac keeps a
+private 30-day log of sessions with counts only, never typed text.
 
 Incoming and active calls appear in a compact floating macOS call panel with
 explicit controls. It stays available across Spaces without activating Bridgey
