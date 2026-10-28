@@ -183,6 +183,9 @@ final class PairingCoordinator: ObservableObject {
     let quickActions = QuickActions()
     let mediaController = MediaController()
     let shortcuts = ShortcutSettings()
+    /// Screen sharing from the phone (`screen`): view only, off by default.
+    let phoneScreen = PhoneScreen()
+    private let phoneScreenWindows = PhoneScreenWindows()
 
     var trustedDevices: [TrustedDeviceInfo] {
         trustRegistry.devices.map { device in
@@ -289,6 +292,8 @@ final class PairingCoordinator: ObservableObject {
             }
         }
         shortcuts.register()
+        phoneScreen.presenter = phoneScreenWindows
+        phoneScreen.send = { [weak self] kind, payload in self?.sendScreenMessage(kind: kind, payload: payload) == true }
         settingsCancellable = Publishers.CombineLatest3(
             settings.$globalFeatures,
             settings.$deviceFeatures,
@@ -302,6 +307,7 @@ final class PairingCoordinator: ObservableObject {
                     if !self.featureEnabled(.ping) { self.clearPingStatus() }
                     if !self.isFeatureAvailable(.links) { self.quickActions.reset() }
                     self.mediaController.reset()
+                    if !self.featureEnabled(.screen) { self.phoneScreen.disabledHere() }
                     if !self.featureEnabled(.clipboard) { self.clearClipboardSendStatus() }
                     if !self.featureEnabled(.notifications) { self.clearRemoteCall() }
                     if !self.featureEnabled(.calls) {
@@ -391,6 +397,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        phoneScreen.unavailable(disconnected: true)
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -448,6 +455,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        phoneScreen.unavailable(disconnected: true)
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -470,6 +478,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        phoneScreen.unavailable(disconnected: true)
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -765,6 +774,33 @@ final class PairingCoordinator: ObservableObject {
             mediaController.command(action: action, value: value, completion: reply)
         } else {
             quickActions.receive(message.kind, payload: payload)
+        }
+    }
+
+    /// One encrypted `screen.*` message with this Mac's next session sequence. No `messageId`: these stay out
+    /// of the shared replay window (docs/protocol.md, "Screen sharing").
+    private func sendScreenMessage(kind: String, payload: [String: Any]) -> Bool {
+        guard let current = session, case .connected = state, let key = current.pairingKey else { return false }
+        current.screenSequenceOut += 1
+        var body = payload
+        body["sequence"] = current.screenSequenceOut
+        guard let data = try? JSONSerialization.data(withJSONObject: body), data.count <= ScreenLimits.messageBytes,
+              let encrypted = try? encrypt(data, key: key) else { return false }
+        current.send(PairingMessage(kind: kind, sessionId: current.id, nonce: encrypted.nonce, ciphertext: encrypted.ciphertext))
+        return true
+    }
+
+    /// The phone's `screen.*` messages: decrypted here and ordered by the session's screen sequence.
+    /// With "Show phone screen" off, only `screen.start` is read, to refuse it. Malformed, undecryptable
+    /// or out-of-sequence messages are dropped and the session stays.
+    private func receiveScreenMessage(_ message: PairingMessage, in current: Session) {
+        let enabled = featureEnabled(.screen, current: current)
+        guard session === current, case .connected = state, message.sessionId == current.id,
+              enabled || message.kind == "screen.start",
+              let key = current.pairingKey, let nonce = message.nonce, let ciphertext = message.ciphertext,
+              let data = try? decrypt(nonce: nonce, ciphertext: ciphertext, key: key) else { return }
+        phoneScreen.receive(kind: message.kind, data, phoneName: current.peerName, enabled: enabled) { sequence in
+            current.screenSequence.accept(sequence)
         }
     }
 
@@ -1091,6 +1127,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        phoneScreen.unavailable(disconnected: true)
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -1121,6 +1158,7 @@ final class PairingCoordinator: ObservableObject {
                 self.quickActions.reset()
                 self.mediaController.reset()
                 self.lastSentBattery = nil
+                self.phoneScreen.unavailable(disconnected: true)
                 self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.remoteFeatureStateReceived = false
@@ -1151,6 +1189,7 @@ final class PairingCoordinator: ObservableObject {
                     self.quickActions.reset()
                     self.mediaController.reset()
                     self.lastSentBattery = nil
+                    self.phoneScreen.unavailable(disconnected: true)
                     self.clearRemoteCall()
                     self.remoteFeatureStateReceived = false
                     current.close()
@@ -1169,6 +1208,8 @@ final class PairingCoordinator: ObservableObject {
             switch message.kind {
             case "quick.request", "quick.result":
                 receiveQuickPayload(message, current: current)
+            case "screen.start", "screen.frame", "screen.stats", "screen.stop":
+                receiveScreenMessage(message, in: current)
             case "heartbeat.ping":
                 guard message.sessionId == current.id, case .connected = state else { return }
                 current.heartbeatSupported = true
@@ -1264,6 +1305,7 @@ final class PairingCoordinator: ObservableObject {
                     stopMacSound()
                     androidRinging = false
                 }
+                if remoteFeatures[.screen] == false { phoneScreen.unavailable(disconnected: false) }
                 flushPendingCallIfPossible()
                 publishLocalBattery(force: true)
             case "ping.request":
@@ -2030,6 +2072,9 @@ private final class Session {
     private var buffer = Data()
     private var seenMessageIDs = Set<String>()
     var quickSequence = QuickRequestSequence()
+    /// The phone's `screen.*` sequence in this session, and this Mac's.
+    var screenSequence = ScreenSequence()
+    var screenSequenceOut = 0
 
     init(connection: NWConnection, peerName: String) {
         self.connection = connection

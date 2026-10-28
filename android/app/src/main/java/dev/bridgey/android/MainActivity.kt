@@ -62,6 +62,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.bridgey.android.screen.ScreenShare
+import dev.bridgey.android.screen.ScreenShareState
+import dev.bridgey.android.screen.ScreenStopReason
 import dev.bridgey.core.discovery.DiscoveredPeer
 import dev.bridgey.core.discovery.NsdDiscoveryService
 import java.io.File
@@ -88,6 +91,7 @@ private enum class PermissionPrompt {
     BridgeyNotifications,
     NotificationForwarding,
     DirectCalls,
+    ScreenNotifications,
 }
 
 private data class SharedContent(
@@ -109,6 +113,12 @@ class MainActivity : ComponentActivity() {
     private val callPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         bridgeySettings.setDirectCallsEnabled(hasCallIntegrationPermissions())
         BridgeyNotificationListenerService.callPermissionsChanged()
+    }
+    private val screenConsentLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode == android.app.Activity.RESULT_OK && data != null) {
+            (application as BridgeyApplication).screenShare.consentGranted(this, result.resultCode, data)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,6 +142,8 @@ class MainActivity : ComponentActivity() {
                     discovery = discovery,
                     pairing = pairing,
                     settings = bridgey.settings,
+                    screenShare = bridgey.screenShare,
+                    onRequestScreenShare = ::requestScreenShare,
                     onDeviceNameChanged = bridgey::updateDeviceName,
                     appNotificationsEnabled = appNotificationsEnabled,
                     notificationAccessEnabled = notificationAccessEnabled,
@@ -232,6 +244,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun requestScreenShare() {
+        // Android's own consent dialog, every time; Bridgey never keeps or reuses the result.
+        runCatching { screenConsentLauncher.launch((application as BridgeyApplication).screenShare.consentIntent()) }
+    }
+
     private fun hasCallIntegrationPermissions(): Boolean =
         CALL_INTEGRATION_PERMISSIONS.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
@@ -295,6 +312,8 @@ private fun BridgeyApp(
     discovery: NsdDiscoveryService,
     pairing: PairingCoordinator,
     settings: BridgeySettings,
+    screenShare: ScreenShare,
+    onRequestScreenShare: () -> Unit,
     onDeviceNameChanged: (String) -> Unit,
     appNotificationsEnabled: Boolean,
     notificationAccessEnabled: Boolean,
@@ -321,6 +340,7 @@ private fun BridgeyApp(
     val trustedDevices by pairing.trustedDevices.collectAsStateWithLifecycle()
     val remoteFeatures by pairing.remoteFeatures.collectAsStateWithLifecycle()
     val settingsState by settings.state.collectAsStateWithLifecycle()
+    val screenState by screenShare.state.collectAsStateWithLifecycle()
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
     var showingSettings by remember { mutableStateOf(false) }
 
@@ -391,6 +411,12 @@ private fun BridgeyApp(
                 macRinging = macRinging,
                 remoteBattery = remoteBattery,
                 pingStatus = pingStatus,
+                screenState = screenState,
+                onShareScreen = {
+                    // The sharing notification with Stop is the phone's indicator, so it must be able to show.
+                    if (appNotificationsEnabled) onRequestScreenShare() else permissionPrompt = PermissionPrompt.ScreenNotifications
+                },
+                onStopScreen = { screenShare.stop(ScreenStopReason.USER) },
                 enabledFeatures = BridgeyFeature.entries.associateWith { feature ->
                     settings.isEnabled(feature, (pairingState as? PairingState.Connected)?.deviceId) &&
                         remoteFeatures[feature] != false
@@ -450,6 +476,7 @@ private fun BridgeyApp(
     permissionPrompt?.let { prompt ->
         val isForwarding = prompt == PermissionPrompt.NotificationForwarding
         val isDirectCalls = prompt == PermissionPrompt.DirectCalls
+        val isScreen = prompt == PermissionPrompt.ScreenNotifications
         AlertDialog(
             onDismissRequest = { permissionPrompt = null },
             title = {
@@ -457,6 +484,7 @@ private fun BridgeyApp(
                     when {
                         isForwarding -> "Forward Android notifications?"
                         isDirectCalls -> "Allow call status and controls?"
+                        isScreen -> stringResource(R.string.screen_notifications_title)
                         else -> "Allow Bridgey notifications?"
                     },
                 )
@@ -465,6 +493,7 @@ private fun BridgeyApp(
                 Text(
                     when {
                         isForwarding -> "This optional access lets Bridgey read notification titles and text and send them only to your paired Mac over the encrypted local connection."
+                        isScreen -> stringResource(R.string.screen_notifications_body)
                         isDirectCalls -> "These optional Phone permissions let an authenticated paired Mac start calls, distinguish ringing from active calls, and answer, decline, or hang up. Bridgey does not read contacts or call history."
                         else -> "Bridgey uses notifications to keep the connection visible and show file transfers, received files, and Find Device. It does not use notifications for advertising."
                     },
@@ -730,6 +759,9 @@ private fun DeviceScreen(
     macRinging: Boolean,
     remoteBattery: RemoteBatteryStatus?,
     pingStatus: String?,
+    screenState: ScreenShareState,
+    onShareScreen: () -> Unit,
+    onStopScreen: () -> Unit,
     enabledFeatures: Map<BridgeyFeature, Boolean>,
     pairing: PairingCoordinator,
     appNotificationsEnabled: Boolean,
@@ -759,6 +791,10 @@ private fun DeviceScreen(
                     filesEnabled = enabledFeatures[BridgeyFeature.FILES] != false,
                     findEnabled = enabledFeatures[BridgeyFeature.FIND_DEVICE] != false,
                     pingEnabled = enabledFeatures[BridgeyFeature.PING] != false,
+                    screenEnabled = enabledFeatures[BridgeyFeature.SCREEN] == true,
+                    screenState = screenState,
+                    onShareScreen = onShareScreen,
+                    onStopScreen = onStopScreen,
                     onClipboard = pairing::sendClipboard,
                     onFile = { filePicker.launch(arrayOf("*/*")) },
                     onRing = pairing::findMac,
@@ -854,6 +890,10 @@ private fun ConnectedDeviceCard(
     filesEnabled: Boolean,
     findEnabled: Boolean,
     pingEnabled: Boolean,
+    screenEnabled: Boolean,
+    screenState: ScreenShareState,
+    onShareScreen: () -> Unit,
+    onStopScreen: () -> Unit,
     onClipboard: () -> Unit,
     onFile: () -> Unit,
     onRing: () -> Unit,
@@ -902,11 +942,29 @@ private fun ConnectedDeviceCard(
                 }
                 if (pingEnabled.xor(findEnabled)) Spacer(Modifier.weight(1f))
             }
-            if (!clipboardEnabled && !filesEnabled && !findEnabled && !pingEnabled) {
+            if (screenEnabled || screenState.active) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (screenState.active) {
+                    QuickAction(stringResource(R.string.screen_stop), stringResource(R.string.screen_stop_detail), Modifier.weight(1f), onStopScreen)
+                } else {
+                    QuickAction(stringResource(R.string.screen_share_title), stringResource(R.string.screen_share_action), Modifier.weight(1f), onShareScreen)
+                }
+                Spacer(Modifier.weight(1f))
+            }
+            if (!clipboardEnabled && !filesEnabled && !findEnabled && !pingEnabled && !screenEnabled) {
                 Text("Quick actions are turned off in Settings on one of your devices.", style = MaterialTheme.typography.bodySmall)
             }
             clipboardStatus?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f)) }
             pingStatus?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f)) }
+            screenState.macName?.takeIf { screenState.active }?.let { mac ->
+                Text(
+                    stringResource(
+                        if (screenState.phase == ScreenShareState.Phase.SHARING) R.string.screen_status_sharing else R.string.screen_status_starting,
+                        mac,
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }

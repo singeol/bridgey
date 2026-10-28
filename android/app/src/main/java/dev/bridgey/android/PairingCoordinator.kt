@@ -59,6 +59,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
+import dev.bridgey.android.screen.ScreenKinds
+import dev.bridgey.android.screen.ScreenLimits
+import dev.bridgey.android.screen.ScreenLink
+import dev.bridgey.android.screen.ScreenMacMessage
+import dev.bridgey.android.screen.ScreenSequence
+import dev.bridgey.android.screen.ScreenStopReason
+import dev.bridgey.android.screen.decodeScreenMacMessage
 import org.json.JSONObject
 import org.json.JSONArray
 
@@ -146,6 +153,9 @@ class PairingCoordinator(
     private val remoteCallRequest = RemoteCallRequest(appContext)
     private var lastRemoteCallRequestAt = 0L
 
+    /** Set by the application: screen sharing hears the Mac's stream messages and when sharing stops being possible. */
+    @Volatile var screenListener: ScreenListener? = null
+
     init {
         scope.launch {
             settings.state.collect {
@@ -154,6 +164,7 @@ class PairingCoordinator(
                 if (!featureEnabled(BridgeyFeature.PING)) clearPingStatus()
                 quickActions.policyChanged()
                 sendFeatureState()
+                screenPolicyChanged()
             }
         }
     }
@@ -198,6 +209,7 @@ class PairingCoordinator(
         mutableRemoteBattery.value = null
         clearPingStatus()
         quickActions.reset()
+        screenSessionEnded()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -211,6 +223,7 @@ class PairingCoordinator(
         mutableRemoteBattery.value = null
         clearPingStatus()
         quickActions.reset()
+        screenSessionEnded()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableState.value = PairingState.Idle
     }
@@ -438,6 +451,73 @@ class PairingCoordinator(
             if (!current.quickSequence.accept(payload.optString("feature"), sequence)) return
         }
         quickActions.receive(message.kind, payload)
+    }
+
+    /** What screen sharing (`screen`, docs/protocol.md) hears from the session. */
+    interface ScreenListener {
+        /** screen.started, screen.ack or screen.stop from the Mac, already decrypted and in sequence. */
+        fun message(message: ScreenMacMessage)
+
+        /** Sharing is no longer possible; [tellMac] when the Mac should still hear [reason]. */
+        fun unavailable(reason: ScreenStopReason, tellMac: Boolean)
+    }
+
+    /** The connected Mac's name while screen sharing is available with it. */
+    fun screenTargetName(): String? {
+        val connected = mutableState.value as? PairingState.Connected ?: return null
+        return connected.peerName.takeIf { session?.pairingKey != null && isFeatureAvailable(BridgeyFeature.SCREEN) }
+    }
+
+    /**
+     * How a stream reaches the current session, or null when screen sharing is not available. Bound to this
+     * session: after a reconnect its writes fail and the stream ends. Blocking; call it off the main thread.
+     */
+    fun screenLink(): ScreenLink? {
+        val current = session ?: return null
+        val key = current.pairingKey ?: return null
+        if (mutableState.value !is PairingState.Connected || !isFeatureAvailable(BridgeyFeature.SCREEN)) return null
+        return object : ScreenLink {
+            override fun sendJson(kind: String, payload: (sequence: Long) -> Map<String, Any>): Boolean =
+                session === current && current.sendScreen(kind, key) {
+                    JSONObject(payload(it)).toString().toByteArray(Charsets.UTF_8)
+                }
+
+            override fun sendFrame(plaintext: (sequence: Long) -> ByteArray): Boolean =
+                session === current && current.sendScreen(ScreenKinds.FRAME, key, plaintext)
+
+            override fun alive(): Boolean =
+                session === current && mutableState.value is PairingState.Connected && isFeatureAvailable(BridgeyFeature.SCREEN)
+        }
+    }
+
+    /**
+     * The Mac's stream messages: outside the message ID window, ordered by the session's screen sequence instead.
+     * Malformed, undecryptable or out-of-sequence ones are dropped and the session stays.
+     */
+    private fun receiveScreenMessage(current: Session, message: Message) {
+        if (session !== current || mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val key = current.pairingKey ?: return
+        val data = Crypto.decrypt(key, message.nonce ?: return, message.ciphertext ?: return) ?: return
+        if (data.size > ScreenLimits.MESSAGE_MAX_BYTES) return
+        val payload = runCatching { JSONObject(data.toString(Charsets.UTF_8)) }.getOrNull() ?: return
+        val decoded = decodeScreenMacMessage(message.kind, payload::opt) ?: return
+        if (!current.screenSequence.accept(decoded.sequence)) return
+        screenListener?.message(decoded)
+    }
+
+    /** The feature changed here or on the Mac: a running share stops when it is no longer available. */
+    private fun screenPolicyChanged() {
+        val connected = session != null && mutableState.value is PairingState.Connected
+        if (connected && isFeatureAvailable(BridgeyFeature.SCREEN)) return
+        val offHere = !featureEnabled(BridgeyFeature.SCREEN)
+        screenListener?.unavailable(
+            if (connected) ScreenStopReason.DISABLED else ScreenStopReason.FAILED,
+            tellMac = connected && offHere && mutableRemoteFeatures.value[BridgeyFeature.SCREEN] == true,
+        )
+    }
+
+    private fun screenSessionEnded() {
+        screenListener?.unavailable(ScreenStopReason.FAILED, tellMac = false)
     }
 
     fun sendNotification(
@@ -818,6 +898,7 @@ class PairingCoordinator(
         mutableRemoteBattery.value = null
         clearPingStatus()
         quickActions.reset()
+        screenSessionEnded()
         mutableRemoteFeatures.value = defaultFeatureState()
         server?.close()
         server = null
@@ -849,6 +930,7 @@ class PairingCoordinator(
         mutableRemoteBattery.value = null
         clearPingStatus()
         quickActions.reset()
+        screenSessionEnded()
         mutableRemoteFeatures.value = defaultFeatureState()
         if (initiatedLocally) {
             current.peerName = peerHint ?: "Mac"
@@ -901,6 +983,7 @@ class PairingCoordinator(
             mutableRemoteBattery.value = null
             clearPingStatus()
             quickActions.reset()
+            screenSessionEnded()
             mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
             diagnostics.record("transport", "disconnected", "reconnecting")
@@ -916,6 +999,7 @@ class PairingCoordinator(
     private fun receive(current: Session, message: Message) {
         when (message.kind) {
             "quick.request", "quick.result", "media.state" -> receiveQuickPayload(current, message)
+            ScreenKinds.STARTED, ScreenKinds.ACK, ScreenKinds.STOP -> receiveScreenMessage(current, message)
             "heartbeat.ping" -> {
                 if (message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
                 current.heartbeatSupported = true
@@ -1406,6 +1490,7 @@ class PairingCoordinator(
         }
         mutableRemoteFeatures.value = received
         quickActions.policyChanged()
+        screenPolicyChanged()
         if (received[BridgeyFeature.CLIPBOARD] == false) mutableClipboardStatus.value = null
         if (received[BridgeyFeature.BATTERY] == false) mutableRemoteBattery.value = null
         if (received[BridgeyFeature.PING] == false) clearPingStatus()
@@ -1440,6 +1525,7 @@ class PairingCoordinator(
         mutableRemoteBattery.value = null
         clearPingStatus()
         quickActions.reset()
+        screenSessionEnded()
         mutableRemoteFeatures.value = defaultFeatureState()
         mutableFileTransfers.value = recoverInterruptedTransfers(mutableFileTransfers.value)
         refreshFileTransferSummary("File transfer interrupted")
@@ -1507,6 +1593,16 @@ class PairingCoordinator(
         fun close() = runCatching { socket.close() }.let { Unit }
 
         val quickSequence = QuickRequestSequence()
+
+        /** The Mac's screen.* sequence in this session, and this phone's. */
+        val screenSequence = ScreenSequence()
+        private var screenSequenceOut = 0L
+
+        /** Encrypts and writes one screen.* message with the next sequence, under the write lock so the wire keeps their order. */
+        @Synchronized fun sendScreen(kind: String, key: ByteArray, plaintext: (Long) -> ByteArray): Boolean {
+            val encrypted = runCatching { Crypto.encrypt(key, plaintext(++screenSequenceOut)) }.getOrNull() ?: return false
+            return send(Message(kind = kind, sessionId = id, nonce = encrypted.nonce, ciphertext = encrypted.ciphertext))
+        }
 
         @Synchronized fun acceptMessageId(id: String): Boolean {
             if (!seenMessageIds.add(id)) return false

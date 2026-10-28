@@ -212,6 +212,7 @@ private struct BridgeyPanel: View {
                 }
             }
             QuickActionsPanel(actions: pairing.quickActions)
+            PhoneScreenPanelRow(screen: pairing.phoneScreen, available: pairing.isFeatureAvailable(.screen))
             if pairing.isFeatureAvailable(.files) {
                 Button { pairing.showFileDropWindow() } label: {
                     Label(
@@ -406,6 +407,37 @@ private struct BridgeyPanel: View {
     }
 }
 
+/// While a phone's screen shows: which phone, and Stop. Otherwise a hint when sharing is available.
+private struct PhoneScreenPanelRow: View {
+    @ObservedObject var screen: PhoneScreen
+    let available: Bool
+
+    var body: some View {
+        if let phone = screen.showing {
+            HStack(spacing: 8) {
+                Label(
+                    String(format: L10n.text("screen.panel.showing", fallback: "Showing the screen of %@"), phone),
+                    systemImage: "rectangle.on.rectangle"
+                )
+                .font(.caption.weight(.medium))
+                .lineLimit(2)
+                Spacer()
+                Button(L10n.text("screen.window.stop", fallback: "Stop")) { screen.stopShowing() }
+                    .controlSize(.small)
+            }
+            .padding(10)
+            .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else if available {
+            Label(
+                L10n.text("screen.panel.hint", fallback: "To show the phone\u{2019}s screen here, tap Screen on the phone."),
+                systemImage: "rectangle.on.rectangle"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
 @MainActor
 private final class SettingsWindowController {
     private let discovery: BonjourDiscovery
@@ -495,6 +527,13 @@ private struct SettingsView: View {
                 }
             }
             MediaSettingsView(media: pairing.mediaController)
+            Section(L10n.text("screen.settings.title", fallback: "Phone screen")) {
+                Text(L10n.text(
+                    "screen.settings.note",
+                    fallback: "Experimental and view only. Turn on Show phone screen above, then start sharing on the phone. Android asks for confirmation every time, and the screen appears here in a window with Stop. Nothing is recorded or saved on this Mac."
+                ))
+                .font(.caption).foregroundStyle(.secondary)
+            }
             ShortcutSettingsView(shortcuts: pairing.shortcuts)
             Section("Notification history") {
                 Toggle("Keep a private local history", isOn: Binding(
