@@ -25,4 +25,21 @@ final class BridgeySettingsTests: XCTestCase {
         XCTAssertFalse(featureEnabledByLegacyPeer(.ping))
         XCTAssertTrue(featureEnabledByLegacyPeer(.battery))
     }
+
+    func testRemoteInputIsOffForLegacyPeersAndNeedsADeviceGrant() {
+        XCTAssertEqual(BridgeyFeature.remoteInput.rawValue, "remote_input")
+        XCTAssertFalse(featureEnabledByLegacyPeer(.remoteInput))
+        XCTAssertTrue(BridgeyFeature.remoteInput.needsDeviceGrant)
+        XCTAssertFalse(BridgeyFeature.clipboard.needsDeviceGrant)
+    }
+
+    func testRemoteInputNeedsTheGlobalSwitchAndAnExplicitDeviceGrant() {
+        XCTAssertFalse(effectiveGrantEnabled(globalEnabled: true, deviceGranted: nil))
+        XCTAssertFalse(effectiveGrantEnabled(globalEnabled: true, deviceGranted: false))
+        XCTAssertFalse(effectiveGrantEnabled(globalEnabled: false, deviceGranted: true))
+        XCTAssertTrue(effectiveGrantEnabled(globalEnabled: true, deviceGranted: true))
+        XCTAssertFalse(remoteControlEffectivelyEnabled(globalEnabled: true, deviceGrants: [:]))
+        XCTAssertFalse(remoteControlEffectivelyEnabled(globalEnabled: false, deviceGrants: ["a": true]))
+        XCTAssertTrue(remoteControlEffectivelyEnabled(globalEnabled: true, deviceGrants: ["a": false, "b": true]))
+    }
 }

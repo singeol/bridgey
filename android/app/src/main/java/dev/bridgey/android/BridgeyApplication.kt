@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.SystemClock
 import android.os.UserManager
 import android.provider.Settings
 import dev.bridgey.core.discovery.LocalDiscoveryIdentity
@@ -25,6 +26,10 @@ class BridgeyApplication : Application() {
     lateinit var discovery: NsdDiscoveryService
         private set
     lateinit var settings: BridgeySettings
+        private set
+
+    /** Remote control of the connected Mac (touchpad and keyboard). */
+    lateinit var remoteInput: RemoteInputController
         private set
     var isBridgeyEnabled: Boolean = false
         private set
@@ -71,12 +76,35 @@ class BridgeyApplication : Application() {
         applicationScope.launch {
             settings.state.collect { lastBatteryIntent?.let(::publishBattery) }
         }
+        startRemoteInput()
         applicationScope.launch {
             pairing.remoteFeatures.collect { features ->
                 if (features[BridgeyFeature.BATTERY] != false) lastBatteryIntent?.let(::publishBattery)
             }
         }
         if (preferences.getBoolean(PREFERENCE_ENABLED, true)) enableBridgey()
+    }
+
+    private fun startRemoteInput() {
+        remoteInput = RemoteInputController(
+            applicationScope,
+            object : RemoteInputTransport {
+                override fun send(deviceId: String, kind: String, payload: ByteArray) =
+                    pairing.sendRemoteInput(deviceId, kind, payload)
+
+                override fun isAvailable(deviceId: String) =
+                    (pairing.state.value as? PairingState.Connected)?.deviceId == deviceId &&
+                        pairing.isFeatureAvailable(BridgeyFeature.REMOTE_INPUT)
+            },
+            clock = SystemClock::elapsedRealtime,
+        )
+        pairing.remoteInputListener = remoteInput::onHostMessage
+        applicationScope.launch {
+            // A session ends when its Mac disconnects or either side stops allowing it.
+            combine(pairing.state, pairing.remoteFeatures, settings.state) { state, _, _ -> state }.collect { state ->
+                remoteInput.connectionsChanged(setOfNotNull((state as? PairingState.Connected)?.deviceId))
+            }
+        }
     }
 
     fun enableBridgey() {
@@ -103,6 +131,7 @@ class BridgeyApplication : Application() {
             batteryReceiverRegistered = false
         }
         discovery.stop()
+        remoteInput.stop()
         pairing.pause()
     }
 

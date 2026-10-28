@@ -146,6 +146,10 @@ class PairingCoordinator(
     private val remoteCallRequest = RemoteCallRequest(appContext)
     private var lastRemoteCallRequestAt = 0L
 
+    /** Decrypted remote input messages (`input.*`) from the connected Mac, for the remote input controller. */
+    @Volatile
+    var remoteInputListener: ((deviceId: String, kind: String, payload: ByteArray) -> Unit)? = null
+
     init {
         scope.launch {
             settings.state.collect {
@@ -421,6 +425,30 @@ class PairingCoordinator(
                 messageId = UUID.randomUUID().toString(), nonce = encrypted.nonce, ciphertext = encrypted.ciphertext))
         }
         return true
+    }
+
+    /**
+     * Sends one remote input message, encrypted on the current session, in the caller's order.
+     * Blocking: the remote input controller calls it from its single outbox thread only.
+     */
+    fun sendRemoteInput(deviceId: String, kind: String, payload: ByteArray): Boolean {
+        val current = session ?: return false
+        val key = current.pairingKey ?: return false
+        if (mutableState.value !is PairingState.Connected || current.remoteDeviceId != deviceId) return false
+        val encrypted = Crypto.encrypt(key, payload)
+        return current.send(Message(kind = kind, sessionId = current.id,
+            messageId = UUID.randomUUID().toString(), nonce = encrypted.nonce, ciphertext = encrypted.ciphertext))
+    }
+
+    /**
+     * Remote input from the Mac: only session replies arrive here. These messages skip the shared
+     * message-ID window (see docs/protocol.md); the controller checks their own sequence.
+     */
+    private fun receiveRemoteInput(current: Session, message: Message) {
+        if (session !== current || mutableState.value !is PairingState.Connected || message.sessionId != current.id) return
+        val key = current.pairingKey ?: return
+        val data = Crypto.decrypt(key, message.nonce ?: return, message.ciphertext ?: return) ?: return
+        remoteInputListener?.invoke(current.remoteDeviceId, message.kind, data)
     }
 
     private fun receiveQuickPayload(current: Session, message: Message) {
@@ -1035,6 +1063,7 @@ class PairingCoordinator(
             "files.complete" -> receiveFileComplete(current, message)
             "files.cancel" -> receiveFileCancel(message.transferId)
             "files.cancel.ack" -> message.transferId?.let { removeFileTransfer(it, "Transfer cancelled") }
+            else -> if (message.kind.startsWith("input.")) receiveRemoteInput(current, message)
         }
     }
 

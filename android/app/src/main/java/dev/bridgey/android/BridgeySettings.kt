@@ -15,10 +15,20 @@ enum class BridgeyFeature(val key: String, val title: String) {
     LINKS("links", "Web links"),
     MEDIA("media", "Mac media controls"),
     CALLS("calls", "Calls from Mac"),
+    REMOTE_INPUT("remote_input", "Mac remote control"),
 }
 
 internal fun featureEnabledByLegacyPeer(feature: BridgeyFeature): Boolean =
-    feature !in setOf(BridgeyFeature.CALLS, BridgeyFeature.PING, BridgeyFeature.LINKS, BridgeyFeature.MEDIA)
+    feature !in setOf(
+        BridgeyFeature.CALLS,
+        BridgeyFeature.PING,
+        BridgeyFeature.LINKS,
+        BridgeyFeature.MEDIA,
+        BridgeyFeature.REMOTE_INPUT,
+    )
+
+/** Remote control starts off until the person turns it on; every other feature starts on. */
+internal fun featureOnByDefault(feature: BridgeyFeature): Boolean = feature != BridgeyFeature.REMOTE_INPUT
 
 data class BridgeySettingsState(
     val deviceName: String,
@@ -27,7 +37,12 @@ data class BridgeySettingsState(
     val notificationApplications: Map<String, String>,
     val disabledNotificationPackages: Set<String>,
     val directCallsEnabled: Boolean,
+    /** Remote control pointer speed, 1 (slow) to 5 (fast). */
+    val remotePointerSpeed: Int = DEFAULT_REMOTE_POINTER_SPEED,
 )
+
+internal const val DEFAULT_REMOTE_POINTER_SPEED = 3
+internal val REMOTE_POINTER_SPEEDS = 1..5
 
 internal fun effectiveFeatureEnabled(
     globalEnabled: Boolean,
@@ -103,6 +118,12 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         mutableState.value = mutableState.value.copy(directCallsEnabled = enabled)
     }
 
+    fun setRemotePointerSpeed(level: Int) {
+        val value = level.coerceIn(REMOTE_POINTER_SPEEDS)
+        preferences.edit().putInt(KEY_REMOTE_POINTER_SPEED, value).apply()
+        mutableState.value = mutableState.value.copy(remotePointerSpeed = value)
+    }
+
     fun removeDevice(deviceId: String) {
         val editor = preferences.edit()
         BridgeyFeature.entries.forEach { editor.remove("device.$deviceId.${it.key}") }
@@ -112,7 +133,7 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
 
     private fun load(defaultDeviceName: String): BridgeySettingsState {
         val globals = BridgeyFeature.entries.associateWith {
-            preferences.getBoolean("global.${it.key}", true)
+            preferences.getBoolean("global.${it.key}", featureOnByDefault(it))
         }
         val perDevice = mutableMapOf<String, MutableMap<BridgeyFeature, Boolean>>()
         preferences.all.forEach { (key, value) ->
@@ -134,6 +155,8 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
             notificationApplications = notificationApplications,
             disabledNotificationPackages = preferences.getStringSet(KEY_DISABLED_NOTIFICATION_PACKAGES, emptySet()).orEmpty(),
             directCallsEnabled = preferences.getBoolean(KEY_DIRECT_CALLS_ENABLED, false),
+            remotePointerSpeed = preferences.getInt(KEY_REMOTE_POINTER_SPEED, DEFAULT_REMOTE_POINTER_SPEED)
+                .takeIf { it in REMOTE_POINTER_SPEEDS } ?: DEFAULT_REMOTE_POINTER_SPEED,
         )
     }
 
@@ -142,5 +165,6 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
         private const val KEY_NOTIFICATION_APPLICATION_PREFIX = "notification.application."
         private const val KEY_DISABLED_NOTIFICATION_PACKAGES = "notification.disabled_packages"
         private const val KEY_DIRECT_CALLS_ENABLED = "calls.direct_enabled"
+        private const val KEY_REMOTE_POINTER_SPEED = "remote.pointer_speed"
     }
 }
