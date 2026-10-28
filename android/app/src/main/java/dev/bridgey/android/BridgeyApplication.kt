@@ -63,8 +63,6 @@ class BridgeyApplication : Application() {
                     }?.let { peer ->
                         peer.host?.let { pairing.pair(it, peer.port ?: 42_458, peer.deviceNameHint) }
                     }
-                } else if (state is PairingState.Connected) {
-                    lastBatteryIntent?.let(::publishBattery)
                 }
             }
         }

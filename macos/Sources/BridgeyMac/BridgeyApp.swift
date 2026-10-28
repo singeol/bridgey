@@ -77,12 +77,19 @@ private struct BridgeyPanel: View {
             if !settings.hasCompletedOnboarding {
                 welcomeCard
             } else {
-                switch pairing.state {
-                case let .connected(_, name): connectedCard(name: name)
+                switch pairing.pairingFlow {
                 case let .connecting(name): statusCard(title: "Connecting to \(name)", detail: "Establishing a secure session…", progress: true)
                 case let .verification(name, code): verificationCard(name: name, code: code)
                 case let .failed(message): failureCard(message)
-                case .idle: nearbyDevices
+                case .idle, .connected: EmptyView()
+                }
+                if case let .connected(_, name) = pairing.state {
+                    if pairing.connections.count > 1 { devicePicker }
+                    connectedCard(name: name)
+                }
+                // While devices are connected, the list only shows when there is another device to pair.
+                if pairing.pairingFlow == .idle && (pairing.connections.isEmpty || !unconnectedPeers.isEmpty) {
+                    nearbyDevices
                 }
             }
 
@@ -110,14 +117,38 @@ private struct BridgeyPanel: View {
         .padding(16)
     }
 
-    private var isConnected: Bool {
-        if case .connected = pairing.state { return true }
-        return false
-    }
+    private var isConnected: Bool { !pairing.connections.isEmpty }
 
     private var headerSubtitle: String {
-        if case .connected = pairing.state { return "Connected securely" }
-        return "Ready on your local network"
+        switch pairing.connections.count {
+        case 0: return "Ready on your local network"
+        case 1: return "Connected securely"
+        default:
+            return String(format: L10n.text("panel.connectedMany", fallback: "Connected to %d devices"), pairing.connections.count)
+        }
+    }
+
+    /// Chooses the device that actions in the card below go to.
+    private var devicePicker: some View {
+        Picker(L10n.text("panel.sendTo", fallback: "Send to"), selection: Binding(
+            get: {
+                if case let .connected(id, _) = pairing.state { return id }
+                return ""
+            },
+            set: { pairing.selectDevice($0) }
+        )) {
+            ForEach(pairing.connections) { device in
+                Text(device.name).tag(device.id)
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    /// Discovered devices that are not connected.
+    private var unconnectedPeers: [DiscoveredPeer] {
+        discovery.peers.filter { peer in
+            !pairing.connections.contains { $0.id == peer.deviceIDHint }
+        }
     }
 
     @ViewBuilder
@@ -189,6 +220,10 @@ private struct BridgeyPanel: View {
                 }
                 if pairing.isFeatureAvailable(.files) {
                     actionButton("File", icon: "paperplane") { pairing.chooseAndSendFile() }
+                }
+                if pairing.isFeatureAvailable(.files) && pairing.isFeatureAvailable(.filesBrowse) {
+                    actionButton(L10n.text("browse.action", fallback: "Phone"), icon: "folder") { pairing.showPhoneFolderBrowser() }
+                        .help(L10n.text("browse.action.help", fallback: "Browse folders shared on Android"))
                 }
                 if pairing.isFeatureAvailable(.findDevice) {
                     actionButton(
@@ -316,7 +351,7 @@ private struct BridgeyPanel: View {
     private var nearbyDevices: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("Nearby devices").font(.subheadline.weight(.semibold))
-            if discovery.peers.isEmpty {
+            if unconnectedPeers.isEmpty {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     VStack(alignment: .leading, spacing: 2) {
@@ -327,7 +362,7 @@ private struct BridgeyPanel: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                ForEach(discovery.peers) { peer in
+                ForEach(unconnectedPeers) { peer in
                     Button {
                         if let host = peer.host, let port = peer.port {
                             pairing.pair(host: host, port: port, peerName: peer.deviceNameHint)
@@ -529,7 +564,7 @@ private struct SettingsView: View {
             Section("Paired devices") {
                 if pairing.trustedDevices.isEmpty { Text("No paired devices").foregroundStyle(.secondary) }
                 ForEach(pairing.trustedDevices) { device in
-                    DisclosureGroup(device.name) {
+                    DisclosureGroup {
                         Text("Choose what this Mac may use with this device.")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(BridgeyFeature.allCases) { feature in
@@ -540,14 +575,12 @@ private struct SettingsView: View {
                                 },
                                 set: {
                                     settings.setForDevice(device.id, feature: feature, enabled: $0)
-                                    if feature == .findDevice && !$0,
-                                       case let .connected(connectedID, _) = pairing.state,
-                                       connectedID == device.id { pairing.stopFinding() }
+                                    if feature == .findDevice && !$0, connection(device.id) != nil { pairing.stopFinding() }
                                 }
                             )) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(feature.title)
-                                    if connectedDeviceID == device.id && pairing.remoteFeatures[feature] == false {
+                                    if connection(device.id)?.link.remoteFeatures[feature] == false {
                                         Text("Off on \(device.name)").font(.caption2).foregroundStyle(.orange)
                                     }
                                 }
@@ -555,6 +588,14 @@ private struct SettingsView: View {
                             .disabled(settings.globalFeatures[feature] == false)
                         }
                         Button("Forget device", role: .destructive) { pairing.forget(deviceID: device.id) }
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            if connection(device.id) != nil {
+                                Text(L10n.text("settings.connected", fallback: "Connected"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
@@ -576,9 +617,8 @@ private struct SettingsView: View {
         }
     }
 
-    private var connectedDeviceID: String? {
-        if case let .connected(deviceID, _) = pairing.state { return deviceID }
-        return nil
+    private func connection(_ deviceID: String) -> ConnectedDevice? {
+        pairing.connections.first { $0.id == deviceID }
     }
 
     private func makeDefaultPhoneLinkHandler() {
