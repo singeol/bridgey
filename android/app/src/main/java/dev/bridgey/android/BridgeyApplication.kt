@@ -26,6 +26,8 @@ class BridgeyApplication : Application() {
         private set
     lateinit var settings: BridgeySettings
         private set
+    internal lateinit var savedMacActions: SavedMacActions
+        private set
     var isBridgeyEnabled: Boolean = false
         private set
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -71,6 +73,20 @@ class BridgeyApplication : Application() {
         applicationScope.launch {
             settings.state.collect { lastBatteryIntent?.let(::publishBattery) }
         }
+        savedMacActions = SavedMacActions(this)
+        applicationScope.launch {
+            combine(pairing.state, pairing.quickActions.macActions, pairing.trustedDeviceIds) { state, actions, trusted ->
+                Triple(state, actions, trusted)
+            }.collect { (state, actions, trusted) ->
+                savedMacActions.retainOnly(trusted)
+                if (state is PairingState.Connected && actions != null) savedMacActions.save(state.deviceId, actions)
+            }
+        }
+        applicationScope.launch {
+            combine(pairing.state, pairing.quickActions.macActions, pairing.remoteFeatures, settings.state, pairing.trustedDevices) {
+                _, _, _, _, _ -> Unit
+            }.collect { updateMacWidgets(this@BridgeyApplication) }
+        }
         applicationScope.launch {
             pairing.remoteFeatures.collect { features ->
                 if (features[BridgeyFeature.BATTERY] != false) lastBatteryIntent?.let(::publishBattery)
@@ -91,6 +107,7 @@ class BridgeyApplication : Application() {
             batteryReceiverRegistered = true
         }
         lastBatteryIntent?.let(::publishBattery)
+        updateMacWidgets(this)
     }
 
     fun disableBridgey() {
@@ -104,6 +121,7 @@ class BridgeyApplication : Application() {
         }
         discovery.stop()
         pairing.pause()
+        updateMacWidgets(this)
     }
 
     fun updateDeviceName(value: String) {

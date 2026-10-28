@@ -11,11 +11,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-internal fun QuickActionsCard(actions: QuickActions, linksEnabled: Boolean, mediaEnabled: Boolean) {
+internal fun QuickActionsCard(actions: QuickActions, linksEnabled: Boolean, mediaEnabled: Boolean, macActionsEnabled: Boolean = false) {
     val link by actions.receivedLink.collectAsState()
     val status by actions.status.collectAsState()
     val media by actions.media.collectAsState()
@@ -71,7 +72,50 @@ internal fun QuickActionsCard(actions: QuickActions, linksEnabled: Boolean, medi
                 Slider(value = volume, enabled = ready, onValueChange = { volume = it }, valueRange = 0f..100f,
                     onValueChangeFinished = { actions.request(BridgeyFeature.MEDIA, "volume", volume.toInt().toString()) })
             }
+            if (macActionsEnabled) MacActionsSection(actions)
             status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun MacActionsSection(actions: QuickActions) {
+    val state by actions.macActions.collectAsState()
+    Text(stringResource(R.string.mac_actions_title), style = MaterialTheme.typography.titleMedium)
+    val current = state
+    if (current == null || current.entries.isEmpty()) {
+        Text(stringResource(if (current == null) R.string.mac_actions_waiting else R.string.mac_actions_empty),
+            style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    val title: @Composable (MacActionEntry) -> String = { entry ->
+        macActionTitleRes(entry.id)?.let { stringResource(it) } ?: entry.title
+    }
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        current.system.forEach { entry -> Button(onClick = { actions.runMacAction(entry.id) }) { Text(title(entry)) } }
+    }
+    val volume = current.volume
+    if (current.entries.any { it.kind == MacActionKind.VOLUME }) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(MacActionIds.VOLUME_DOWN, MacActionIds.VOLUME_MUTE, MacActionIds.VOLUME_UP).filter(current::has).forEach { id ->
+                val label = if (id == MacActionIds.VOLUME_MUTE && volume?.muted == true) R.string.mac_action_unmute
+                else macActionTitleRes(id) ?: R.string.mac_action_volume
+                TextButton(onClick = { actions.runMacAction(id) }) { Text(stringResource(label)) }
+            }
+        }
+        if (volume != null && current.has(MacActionIds.VOLUME_SET)) {
+            var level by remember(volume.level) { mutableFloatStateOf(volume.level.toFloat()) }
+            Text(stringResource(R.string.mac_actions_volume_level, level.toInt()))
+            Slider(value = level, onValueChange = { level = it }, valueRange = 0f..100f,
+                onValueChangeFinished = { actions.runMacAction(MacActionIds.VOLUME_SET, level.toInt()) })
+        }
+    }
+    if (current.apps.isNotEmpty() || current.shortcuts.isNotEmpty()) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (current.apps + current.shortcuts).forEach { entry ->
+                OutlinedButton(onClick = { actions.runMacAction(entry.id) }) { Text(entry.title, maxLines = 1) }
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ import Foundation
 struct QuickRequestSequence {
     private var last: [String: Int] = [:]
     mutating func accept(feature: String, sequence: Int) -> Bool {
-        guard ["links", "media"].contains(feature), (1...9_007_199_254_740_991).contains(sequence),
+        guard ["links", "media", "mac_actions"].contains(feature), (1...9_007_199_254_740_991).contains(sequence),
               sequence > last[feature, default: 0] else { return false }
         last[feature] = sequence
         return true

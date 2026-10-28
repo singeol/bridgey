@@ -182,6 +182,7 @@ final class PairingCoordinator: ObservableObject {
     @Published private(set) var pingStatus: String?
     let quickActions = QuickActions()
     let mediaController = MediaController()
+    let macActions = MacActions.live()
     let shortcuts = ShortcutSettings()
 
     var trustedDevices: [TrustedDeviceInfo] {
@@ -229,6 +230,7 @@ final class PairingCoordinator: ObservableObject {
     private var cancelledTransferIDs = Set<String>()
     private var findDeviceSound: NSSound?
     private var lastSentBattery: LocalBatteryStatus?
+    private var lastMacActionsState: Data?
     private let diagnostics = BridgeyDiagnostics()
     private let notificationHistoryStore: NotificationHistoryStore
 
@@ -280,6 +282,14 @@ final class PairingCoordinator: ObservableObject {
         mediaController.onState = { [weak self] in
             _ = self?.sendQuickPayload(kind: "media.state", payload: $0)
         }
+        macActions.available = { [weak self] in
+            guard let self, case .connected = self.state else { return false }
+            return self.isFeatureAvailable(.macActions)
+        }
+        macActions.onChange = { [weak self] in self?.publishMacActions(force: true) }
+        macActions.record = { [weak self] event, outcome in
+            self?.diagnostics.record(category: "mac_actions", event: event, outcome: outcome)
+        }
         shortcuts.perform = { [weak self] action in
             switch action {
             case .clipboard: self?.sendClipboard()
@@ -316,6 +326,7 @@ final class PairingCoordinator: ObservableObject {
                     self.sendFeatureState()
                     self.mediaController.refresh()
                     self.publishLocalBattery(force: true)
+                    self.publishMacActions(force: true)
                 }
             }
     }
@@ -391,6 +402,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        lastMacActionsState = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -448,6 +460,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        lastMacActionsState = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -470,6 +483,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        lastMacActionsState = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         state = .idle
@@ -763,9 +777,28 @@ final class PairingCoordinator: ObservableObject {
             guard isFeatureAvailable(.media), let action = payload["action"] as? String,
                   let value = payload["value"] as? String else { reply(false); return }
             mediaController.command(action: action, value: value, completion: reply)
+        } else if message.kind == "quick.request", payload["feature"] as? String == "mac_actions" {
+            guard let requestID = payload["requestId"] as? String, UUID(uuidString: requestID) != nil else { return }
+            macActions.perform(action: payload["action"] as? String ?? "", value: payload["value"] as? String ?? "") {
+                [weak self, weak current] result in
+                guard let self, let current, self.session === current else { return }
+                _ = self.sendQuickPayload(kind: "quick.result", payload: result.payload.merging([
+                    "version": 1, "requestId": requestID, "feature": "mac_actions",
+                ]) { value, _ in value })
+                if result.volume != nil { self.lastMacActionsState = nil }
+            }
         } else {
             quickActions.receive(message.kind, payload: payload)
         }
+    }
+
+    /// Sends `mac_actions.state` when the feature is available; unforced, only when it changed.
+    private func publishMacActions(force: Bool) {
+        guard case .connected = state, isFeatureAvailable(.macActions) else { lastMacActionsState = nil; return }
+        let payload = macActions.statePayload()
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              force || data != lastMacActionsState else { return }
+        if sendQuickPayload(kind: "mac_actions.state", payload: payload) { lastMacActionsState = data }
     }
 
     private func publishLocalBattery(force: Bool = false) {
@@ -1091,6 +1124,7 @@ final class PairingCoordinator: ObservableObject {
         quickActions.reset()
         mediaController.reset()
         lastSentBattery = nil
+        lastMacActionsState = nil
         remoteFeatures = defaultRemoteFeatureState()
         remoteFeatureStateReceived = false
         clearRemoteCall()
@@ -1121,6 +1155,7 @@ final class PairingCoordinator: ObservableObject {
                 self.quickActions.reset()
                 self.mediaController.reset()
                 self.lastSentBattery = nil
+                self.lastMacActionsState = nil
                 self.clearRemoteCall()
                 self.remoteFeatures = defaultRemoteFeatureState()
                 self.remoteFeatureStateReceived = false
@@ -1151,6 +1186,7 @@ final class PairingCoordinator: ObservableObject {
                     self.quickActions.reset()
                     self.mediaController.reset()
                     self.lastSentBattery = nil
+                    self.lastMacActionsState = nil
                     self.clearRemoteCall()
                     self.remoteFeatureStateReceived = false
                     current.close()
@@ -1266,6 +1302,7 @@ final class PairingCoordinator: ObservableObject {
                 }
                 flushPendingCallIfPossible()
                 publishLocalBattery(force: true)
+                publishMacActions(force: true)
             case "ping.request":
                 try receivePing(message, in: current)
             case "ping.ack":
@@ -1736,6 +1773,7 @@ final class PairingCoordinator: ObservableObject {
             ))
             self.publishLocalBattery()
             self.mediaController.refresh()
+            self.publishMacActions(force: false)
             self.scheduleHeartbeat(for: current)
         }
         heartbeatWorkItem = work

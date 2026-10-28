@@ -495,6 +495,7 @@ private struct SettingsView: View {
                 }
             }
             MediaSettingsView(media: pairing.mediaController)
+            MacActionsSettingsView(actions: pairing.macActions, featureEnabled: settings.globalFeatures[.macActions] == true)
             ShortcutSettingsView(shortcuts: pairing.shortcuts)
             Section("Notification history") {
                 Toggle("Keep a private local history", isOn: Binding(

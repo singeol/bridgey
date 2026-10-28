@@ -49,6 +49,8 @@ class QuickActions(
     val status = mutableStatus.asStateFlow()
     private val mutableMedia = MutableStateFlow(MacMediaState())
     val media = mutableMedia.asStateFlow()
+    private val mutableMacActions = MutableStateFlow<MacActionsState?>(null)
+    internal val macActions = mutableMacActions.asStateFlow()
     private val pending = mutableMapOf<String, Pair<String, Job>>()
     private var sequence = 0L
 
@@ -75,6 +77,14 @@ class QuickActions(
         }
     }
 
+    /** Runs an entry from the Mac's latest list; [value] only for `volume_set`. */
+    fun runMacAction(id: String, value: Int? = null) {
+        val state = mutableMacActions.value
+        if (state == null || !state.has(id)) { mutableStatus.value = context.getString(R.string.mac_action_refused_not_allowed); return }
+        if ((id == MacActionIds.VOLUME_SET) != (value != null) || (value != null && value !in 0..100)) return
+        request(BridgeyFeature.MAC_ACTIONS, id, value?.toString().orEmpty())
+    }
+
     fun sendLink(value: String) {
         val url = validatedWebLink(value)
         if (url == null) { mutableStatus.value = "Copy a valid http or https link first"; return }
@@ -98,10 +108,20 @@ class QuickActions(
                 val feature = payload.optString("feature")
                 if (pending[feature]?.first != payload.optString("requestId")) return
                 pending.remove(feature)?.second?.cancel()
+                if (feature == BridgeyFeature.MAC_ACTIONS.key) {
+                    parseMacVolume(payload.opt("volume"))?.let { volume ->
+                        mutableMacActions.value = mutableMacActions.value?.copy(volume = volume)
+                    }
+                    mutableStatus.value = context.getString(macActionResultRes(payload.opt("accepted") == true, payload.opt("reason")))
+                    return
+                }
                 mutableStatus.value = if (payload.opt("accepted") == true) {
                     if (feature == "links") "Link delivered — waiting for the user to open it" else "Media command completed"
                 } else if (feature == "media") "Player unavailable or busy — check Mac media settings and try again"
                 else "Link declined — check settings or dismiss the previous link"
+            }
+            "mac_actions.state" -> {
+                if (available(BridgeyFeature.MAC_ACTIONS)) parseMacActionsState(payload)?.let { mutableMacActions.value = it }
             }
             "media.state" -> {
                 if (!available(BridgeyFeature.MEDIA)) return
@@ -131,6 +151,7 @@ class QuickActions(
     @Synchronized fun policyChanged() {
         if (!available(BridgeyFeature.LINKS)) mutableLink.value = null
         if (!available(BridgeyFeature.MEDIA)) mutableMedia.value = MacMediaState()
+        if (!available(BridgeyFeature.MAC_ACTIONS)) mutableMacActions.value = null
         pending.entries.removeAll { (feature, operation) ->
             val disabled = BridgeyFeature.entries.find { it.key == feature }?.let { !available(it) } ?: true
             if (disabled) { operation.second.cancel(); mutableStatus.value = null }
@@ -140,5 +161,6 @@ class QuickActions(
     @Synchronized fun reset() {
         pending.values.forEach { it.second.cancel() }; pending.clear()
         mutableLink.value = null; mutableMedia.value = MacMediaState(); mutableStatus.value = null
+        mutableMacActions.value = null
     }
 }

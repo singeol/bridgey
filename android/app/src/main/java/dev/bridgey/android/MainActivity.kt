@@ -766,10 +766,11 @@ private fun DeviceScreen(
                     onPing = pairing::sendPing,
                 )
             }
-            if (enabledFeatures[BridgeyFeature.LINKS] == true || enabledFeatures[BridgeyFeature.MEDIA] == true) {
+            if (enabledFeatures[BridgeyFeature.LINKS] == true || enabledFeatures[BridgeyFeature.MEDIA] == true ||
+                enabledFeatures[BridgeyFeature.MAC_ACTIONS] == true) {
                 item {
                     QuickActionsCard(pairing.quickActions, enabledFeatures[BridgeyFeature.LINKS] == true,
-                        enabledFeatures[BridgeyFeature.MEDIA] == true)
+                        enabledFeatures[BridgeyFeature.MEDIA] == true, enabledFeatures[BridgeyFeature.MAC_ACTIONS] == true)
                 }
             }
         } else {
@@ -805,6 +806,9 @@ private fun DeviceScreen(
 
         item { SectionTitle("Services") }
         item { Text("Quick Settings: edit the tiles in your notification shade and add ‘Bridgey clipboard’ to send copied text.", style = MaterialTheme.typography.bodySmall) }
+        if (enabledFeatures[BridgeyFeature.MAC_ACTIONS] != false) {
+            item { Text(stringResource(R.string.services_controls_hint), style = MaterialTheme.typography.bodySmall) }
+        }
         item {
             ServiceCard(
                 enabled = appNotificationsEnabled,
