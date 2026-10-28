@@ -218,6 +218,19 @@ rename of the partial file. The macOS v1 receiver saves collision-safe names in
 a user-selected directory (default `~/Downloads/Bridgey`) and removes partial
 files when a transfer is interrupted.
 
+Sending several files does not add messages. The sender keeps a local queue and
+offers one file at a time; the next `files.offer` follows only after the
+previous transfer completes, fails, or is cancelled. Each queued file has its
+own transfer ID, so cancelling or retrying one file does not affect the others.
+Waiting files never reach the receiver, which therefore applies its limits and
+feature policy to every file separately.
+
+Receivers resolve name conflicts deterministically and never overwrite an
+existing file. macOS uses Finder-style numbering (`photo.jpg`, `photo 2.jpg`,
+`photo 3.jpg`) and also treats a name as taken while its `.bridgey-part` file
+exists. Android lets `MediaStore` choose a unique name in `Download/Bridgey`,
+which appends a number such as `photo (1).jpg`.
+
 Version 1 does not resume a partial file stream. If a connection is interrupted,
 the receiver deletes its pending partial file and both clients mark the transfer
 as interrupted. A user-initiated retry creates a new transfer identifier,

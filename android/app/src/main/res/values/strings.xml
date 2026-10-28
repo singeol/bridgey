@@ -5,4 +5,6 @@
     <string name="welcome_title">Welcome to Bridgey</string>
     <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
     <string name="welcome_continue">Get started</string>
+    <string name="file_queued">Queued</string>
+    <string name="transfers_cancel_all">Cancel all</string>
 </resources>

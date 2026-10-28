@@ -5,4 +5,6 @@
     <string name="welcome_title">Добро пожаловать в Bridgey</string>
     <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
     <string name="welcome_continue">Начать</string>
+    <string name="file_queued">В очереди</string>
+    <string name="transfers_cancel_all">Отменить все</string>
 </resources>
