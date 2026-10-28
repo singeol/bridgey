@@ -316,6 +316,11 @@ Settings can export a structured diagnostics JSON file. It contains bounded
 event metadata, application/platform versions, feature states, connection
 state, and transfer counts. It never includes clipboard text, notification
 content, file names, network addresses, or device/session/transfer identifiers.
+Settings on both platforms also shows connection health, which the export
+includes: the route class (local network, shared address space such as a VPN,
+or another network), who opened the connection, heartbeat round trips, the last
+disconnect reason and today's connection attempts. The round trip reuses the
+existing heartbeat, so nothing new is sent, and addresses are never kept.
 
 ## Development principles
 

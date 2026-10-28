@@ -4,7 +4,7 @@ import Foundation
 struct QuickRequestSequence {
     private var last: [String: Int] = [:]
     mutating func accept(feature: String, sequence: Int) -> Bool {
-        guard ["links", "media"].contains(feature), (1...9_007_199_254_740_991).contains(sequence),
+        guard ["links", "media", "mac_actions"].contains(feature), (1...9_007_199_254_740_991).contains(sequence),
               sequence > last[feature, default: 0] else { return false }
         last[feature] = sequence
         return true
@@ -28,6 +28,7 @@ final class QuickActions: ObservableObject {
     @Published private(set) var status: String?
     var available: (BridgeyFeature) -> Bool = { _ in false }
     var send: (String, [String: Any]) -> Bool = { _, _ in false }
+    private lazy var browserTab = BrowserTabReader()
     private var pending: String?
     private var timeout: Task<Void, Never>?
     private var sequence = 0
@@ -36,6 +37,21 @@ final class QuickActions: ObservableObject {
         guard let link = NSPasteboard.general.string(forType: .string).flatMap(validatedWebLink) else {
             status = "Copy a valid http or https link first"; return
         }
+        sendLink(link)
+    }
+
+    /// Sends the address of the front Safari or Chrome tab.
+    func sendBrowserTab() {
+        guard available(.links) else { status = "Web links are unavailable on one of your devices"; return }
+        browserTab.currentTab { [weak self] result in
+            switch result {
+            case let .success(link): self?.sendLink(link)
+            case let .failure(failure): self?.status = failure.message
+            }
+        }
+    }
+
+    func sendLink(_ link: String) {
         guard available(.links) else { status = "Web links are unavailable on one of your devices"; return }
         guard pending == nil else { return }
         let id = UUID().uuidString.lowercased()

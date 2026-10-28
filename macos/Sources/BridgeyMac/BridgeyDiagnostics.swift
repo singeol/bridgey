@@ -30,12 +30,13 @@ final class BridgeyDiagnostics {
         connectionState: String,
         transfers: [FileTransferRow],
         localFeatures: [BridgeyFeature: Bool],
-        remoteFeatures: [BridgeyFeature: Bool]
+        remoteFeatures: [BridgeyFeature: Bool],
+        connectionHealth: ConnectionHealthSnapshot? = nil
     ) throws -> Data {
         let featureObject: ([BridgeyFeature: Bool]) -> [String: Bool] = { features in
             Dictionary(uniqueKeysWithValues: BridgeyFeature.allCases.map { ($0.rawValue, features[$0] != false) })
         }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "schemaVersion": 1,
             "generatedAt": formatter.string(from: Date()),
             "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
@@ -51,6 +52,7 @@ final class BridgeyDiagnostics {
                 return try JSONSerialization.jsonObject(with: data)
             },
         ]
+        if let connectionHealth { payload["connectionHealth"] = connectionHealth.diagnostics(formatter: formatter) }
         return try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
     }
 

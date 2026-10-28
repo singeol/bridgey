@@ -29,6 +29,7 @@ internal class BridgeyDiagnostics(private val limit: Int = 200) {
         transfers: Collection<FileTransferState>,
         localFeatures: Map<BridgeyFeature, Boolean>,
         remoteFeatures: Map<BridgeyFeature, Boolean>,
+        connectionHealth: JSONObject? = null,
     ): String {
         val version = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -44,6 +45,7 @@ internal class BridgeyDiagnostics(private val limit: Int = 200) {
             put("historyCount", transfers.count { !it.active })
             put("localFeatures", featureObject(localFeatures))
             put("remoteFeatures", featureObject(remoteFeatures))
+            connectionHealth?.let { put("connectionHealth", it) }
             put("events", JSONArray().apply {
                 snapshot().forEach { event ->
                     put(JSONObject().apply {

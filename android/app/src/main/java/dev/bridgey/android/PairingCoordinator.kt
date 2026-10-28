@@ -143,6 +143,8 @@ class PairingCoordinator(
     private var acceptJob: Job? = null
     private var findRingtone: Ringtone? = null
     private val diagnostics = BridgeyDiagnostics()
+    private val health = ConnectionHealth()
+    internal val connectionHealth: StateFlow<ConnectionHealthSnapshot> = health.snapshot
     private val remoteCallRequest = RemoteCallRequest(appContext)
     private var lastRemoteCallRequestAt = 0L
 
@@ -189,6 +191,7 @@ class PairingCoordinator(
     }
 
     fun cancel() {
+        health.disconnected(DisconnectReason.USER, System.currentTimeMillis())
         val current = session
         session = null
         current?.send(Message(kind = "pairing.cancel", sessionId = current.id))
@@ -203,6 +206,7 @@ class PairingCoordinator(
     }
 
     fun dismiss() {
+        health.disconnected(DisconnectReason.USER, System.currentTimeMillis())
         val current = session
         session = null
         current?.close()
@@ -794,8 +798,11 @@ class PairingCoordinator(
             is PairingState.Failed -> "failed"
         }
         val localFeatures = BridgeyFeature.entries.associateWith { settings.isEnabled(it, null) }
-        return diagnostics.report(appContext, stateName, mutableFileTransfers.value.values, localFeatures, mutableRemoteFeatures.value)
+        return diagnostics.report(appContext, stateName, mutableFileTransfers.value.values, localFeatures, mutableRemoteFeatures.value,
+            connectionHealthNow().toJson().put("batteryOptimizationIgnored", batteryOptimizationIgnored(appContext)))
     }
+
+    internal fun connectionHealthNow(): ConnectionHealthSnapshot = health.current(System.currentTimeMillis())
 
     fun clearTransferHistory() {
         val inactiveIds = mutableFileTransfers.value.values.filterNot(FileTransferState::active).map(FileTransferState::id)
@@ -810,6 +817,7 @@ class PairingCoordinator(
     }
 
     fun pause() {
+        health.disconnected(DisconnectReason.USER, System.currentTimeMillis())
         val current = session
         session = null
         current?.close()
@@ -845,6 +853,8 @@ class PairingCoordinator(
         socket.soTimeout = HEARTBEAT_INTERVAL_MILLIS.toInt()
         val current = Session(socket)
         current.initiatedLocally = initiatedLocally
+        health.attempt(System.currentTimeMillis())
+        var heartbeatTimedOut = false
         session = current
         mutableRemoteBattery.value = null
         clearPingStatus()
@@ -881,12 +891,15 @@ class PairingCoordinator(
                             )
                         ) {
                             android.util.Log.w("Bridgey", "TRANSPORT heartbeat timed out")
+                            heartbeatTimedOut = true
                             break
                         }
+                        val pingId = UUID.randomUUID().toString()
+                        health.heartbeatSent(pingId, SystemClock.elapsedRealtime())
                         if (!current.send(Message(
                                 kind = "heartbeat.ping",
                                 sessionId = current.id,
-                                messageId = UUID.randomUUID().toString(),
+                                messageId = pingId,
                             ))
                         ) break
                     }
@@ -903,6 +916,10 @@ class PairingCoordinator(
             quickActions.reset()
             mutableRemoteFeatures.value = defaultFeatureState()
             mutableState.value = PairingState.Idle
+            health.disconnected(
+                if (heartbeatTimedOut) DisconnectReason.HEARTBEAT else DisconnectReason.CONNECTION_LOST,
+                System.currentTimeMillis(),
+            )
             diagnostics.record("transport", "disconnected", "reconnecting")
             android.util.Log.i("Bridgey", "TRANSPORT disconnected")
         } else if (session === current) {
@@ -915,7 +932,7 @@ class PairingCoordinator(
 
     private fun receive(current: Session, message: Message) {
         when (message.kind) {
-            "quick.request", "quick.result", "media.state" -> receiveQuickPayload(current, message)
+            "quick.request", "quick.result", "media.state", "mac_actions.state" -> receiveQuickPayload(current, message)
             "heartbeat.ping" -> {
                 if (message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
                 current.heartbeatSupported = true
@@ -924,6 +941,7 @@ class PairingCoordinator(
             "heartbeat.pong" -> {
                 if (message.sessionId == current.id && mutableState.value is PairingState.Connected) {
                     current.heartbeatSupported = true
+                    health.heartbeatAnswered(message.messageId, SystemClock.elapsedRealtime())
                 }
             }
             "pairing.offer" -> {
@@ -1353,6 +1371,7 @@ class PairingCoordinator(
         if (current.localConfirmed && current.remoteConfirmed) {
             trust.save(current.remoteDeviceId, current.peerName, current.remoteIdentityKey!!)
             mutableState.value = PairingState.Connected(current.remoteDeviceId, current.peerName)
+            health.connected(current.remoteHost, current.initiatedLocally, System.currentTimeMillis())
             diagnostics.record("pairing", "connected")
             sendFeatureState()
             android.util.Log.i("Bridgey", "PAIRING verified peer=${current.peerName}")
@@ -1434,6 +1453,7 @@ class PairingCoordinator(
     }
 
     private fun fail(message: String) {
+        health.disconnected(DisconnectReason.PROTOCOL, System.currentTimeMillis())
         session?.close()
         session = null
         cancelIncomingFiles()
@@ -1475,6 +1495,8 @@ class PairingCoordinator(
 
     private class Session(private val socket: Socket) {
         val input = BufferedInputStream(socket.getInputStream())
+        /** Used only to classify the route for connection health; never stored or logged. */
+        val remoteHost: String? get() = socket.inetAddress?.hostAddress
         private val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
         var id = ""
         var peerName = "Device"

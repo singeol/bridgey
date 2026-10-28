@@ -21,7 +21,7 @@
     <key>NSLocalNetworkUsageDescription</key>
     <string>Bridgey discovers and connects to your paired Android devices on your local network.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>When you enable media controls, Bridgey controls your selected Music or Spotify player and shares now-playing information with your paired phone.</string>
+    <string>When you enable media controls, Bridgey controls your selected Music or Spotify player and shares now-playing information with your paired phone. When you send the current browser tab, Bridgey reads the address of the front Safari or Chrome tab.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_bridgey._tcp</string>
