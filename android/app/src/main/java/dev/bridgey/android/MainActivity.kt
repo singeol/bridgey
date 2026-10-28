@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -321,6 +322,7 @@ private fun BridgeyApp(
     val trustedDevices by pairing.trustedDevices.collectAsStateWithLifecycle()
     val remoteFeatures by pairing.remoteFeatures.collectAsStateWithLifecycle()
     val settingsState by settings.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var permissionPrompt by remember { mutableStateOf<PermissionPrompt?>(null) }
     var showingSettings by remember { mutableStateOf(false) }
 
@@ -378,6 +380,9 @@ private fun BridgeyApp(
                 },
                 onForget = pairing::forget,
                 onExportDiagnostics = onExportDiagnostics,
+                onAddSharedFolder = { settings.shareFolder(context.contentResolver, it) },
+                onRemoveSharedFolder = { settings.unshareFolder(context.contentResolver, it) },
+                onSharedFolderUploadsChanged = settings::setSharedFolderUploadsEnabled,
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -519,7 +524,7 @@ private fun BridgeyApp(
                     enabled = isConnected && featureAvailable,
                     onClick = {
                         content.text?.let { pairing.sendText(it) }
-                        content.files.forEach(pairing::sendFile)
+                        if (content.files.isNotEmpty()) pairing.sendFiles(content.files)
                         onSharedContentHandled()
                     },
                 ) { Text("Send") }
@@ -553,9 +558,15 @@ private fun SettingsScreen(
     onDirectCallsChanged: (Boolean) -> Unit,
     onForget: (String) -> Unit,
     onExportDiagnostics: () -> Unit,
+    onAddSharedFolder: (Uri) -> Unit,
+    onRemoveSharedFolder: (SharedFolder) -> Unit,
+    onSharedFolderUploadsChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var editedName by remember(state.deviceName) { mutableStateOf(state.deviceName) }
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(onAddSharedFolder)
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
@@ -615,6 +626,47 @@ private fun SettingsScreen(
                             checked = state.directCallsEnabled,
                             onCheckedChange = onDirectCallsChanged,
                         )
+                    }
+                }
+            }
+        }
+
+        if (state.globalFeatures[BridgeyFeature.FILES_BROWSE] != false) {
+            item { SectionTitle(stringResource(R.string.shared_folders_title)) }
+            item {
+                Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            stringResource(R.string.shared_folders_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (state.sharedFolders.isEmpty()) {
+                            Text(stringResource(R.string.shared_folders_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        state.sharedFolders.forEach { folder ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Text(folder.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                                TextButton(onClick = { onRemoveSharedFolder(folder) }) {
+                                    Text(stringResource(R.string.shared_folders_remove))
+                                }
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { folderPicker.launch(null) },
+                            enabled = state.sharedFolders.size < BridgeySettings.MAX_SHARED_FOLDERS,
+                        ) { Text(stringResource(R.string.shared_folders_add)) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(stringResource(R.string.shared_folders_uploads), fontWeight = FontWeight.Medium)
+                                Text(
+                                    stringResource(R.string.shared_folders_uploads_body),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(checked = state.sharedFolderUploadsEnabled, onCheckedChange = onSharedFolderUploadsChanged)
+                        }
                     }
                 }
             }
@@ -739,7 +791,9 @@ private fun DeviceScreen(
     onTurnOff: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(pairing::sendFile) }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) pairing.sendFiles(uris)
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
@@ -781,6 +835,9 @@ private fun DeviceScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     SectionTitle("Recent transfers")
                     Spacer(Modifier.weight(1f))
+                    if (fileTransfers.values.count(FileTransferState::active) > 1) {
+                        TextButton(onClick = { pairing.cancelFileTransfer() }) { Text(stringResource(R.string.transfers_cancel_all)) }
+                    }
                     if (fileTransfers.values.any { !it.active }) {
                         TextButton(onClick = pairing::clearTransferHistory) { Text("Clear") }
                     }
@@ -978,7 +1035,7 @@ private fun TransferCard(transfer: FileTransferState, cancel: () -> Unit, retry:
                     )
                     Text("$percent%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
-            } else if (transfer.active) {
+            } else if (transfer.active && !transfer.queued) {
                 androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(6.dp))
             }
         }

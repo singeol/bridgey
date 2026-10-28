@@ -23,6 +23,7 @@ final class BridgeySettingsTests: XCTestCase {
     func testNewerFeaturesAreOffForLegacyPeers() {
         XCTAssertFalse(featureEnabledByLegacyPeer(.calls))
         XCTAssertFalse(featureEnabledByLegacyPeer(.ping))
+        XCTAssertFalse(featureEnabledByLegacyPeer(.folders))
         XCTAssertTrue(featureEnabledByLegacyPeer(.battery))
     }
 }
