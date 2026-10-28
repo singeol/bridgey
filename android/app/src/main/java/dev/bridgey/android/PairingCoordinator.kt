@@ -915,7 +915,7 @@ class PairingCoordinator(
 
     private fun receive(current: Session, message: Message) {
         when (message.kind) {
-            "quick.request", "quick.result", "media.state" -> receiveQuickPayload(current, message)
+            "quick.request", "quick.result", "media.state", "mac_actions.state" -> receiveQuickPayload(current, message)
             "heartbeat.ping" -> {
                 if (message.sessionId != current.id || mutableState.value !is PairingState.Connected) return
                 current.heartbeatSupported = true

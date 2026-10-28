@@ -5,4 +5,25 @@
     <string name="welcome_title">Welcome to Bridgey</string>
     <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
     <string name="welcome_continue">Get started</string>
+    <string name="mac_actions_title">Mac actions</string>
+    <string name="mac_actions_waiting">Waiting for the Mac to share its actions.</string>
+    <string name="mac_actions_empty">Nothing is allowed yet. Choose actions in Bridgey Settings on the Mac.</string>
+    <string name="mac_actions_volume_level">Mac volume · %1$d%%</string>
+    <string name="mac_action_lock">Lock</string>
+    <string name="mac_action_display_sleep">Display off</string>
+    <string name="mac_action_sleep">Sleep</string>
+    <string name="mac_action_screensaver">Screen saver</string>
+    <string name="mac_action_volume_down">Volume down</string>
+    <string name="mac_action_volume_up">Volume up</string>
+    <string name="mac_action_mute">Mute</string>
+    <string name="mac_action_unmute">Unmute</string>
+    <string name="mac_action_volume">Volume</string>
+    <string name="mac_action_done">Done on the Mac</string>
+    <string name="mac_action_refused_not_allowed">The Mac no longer allows this. Check Mac actions in Bridgey Settings on the Mac.</string>
+    <string name="mac_action_refused_invalid">The Mac could not read the request</string>
+    <string name="mac_action_refused_rate_limited">Too many requests. Wait a moment and try again.</string>
+    <string name="mac_action_refused_busy">A Shortcut is still running on the Mac</string>
+    <string name="mac_action_refused_permission">The Mac needs Accessibility access first. Open Bridgey on the Mac.</string>
+    <string name="mac_action_refused_unavailable">Not available on the Mac right now: the app is gone or there is no sound output</string>
+    <string name="mac_action_refused_failed">The Mac could not do this</string>
 </resources>

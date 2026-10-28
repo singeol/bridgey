@@ -5,4 +5,25 @@
     <string name="welcome_title">Добро пожаловать в Bridgey</string>
     <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
     <string name="welcome_continue">Начать</string>
+    <string name="mac_actions_title">Действия на Mac</string>
+    <string name="mac_actions_waiting">Ждём, пока Mac пришлёт список действий.</string>
+    <string name="mac_actions_empty">Пока ничего не разрешено. Выберите действия в настройках Bridgey на Mac.</string>
+    <string name="mac_actions_volume_level">Громкость Mac · %1$d%%</string>
+    <string name="mac_action_lock">Блокировка</string>
+    <string name="mac_action_display_sleep">Выключить дисплей</string>
+    <string name="mac_action_sleep">Сон</string>
+    <string name="mac_action_screensaver">Заставка</string>
+    <string name="mac_action_volume_down">Тише</string>
+    <string name="mac_action_volume_up">Громче</string>
+    <string name="mac_action_mute">Без звука</string>
+    <string name="mac_action_unmute">Включить звук</string>
+    <string name="mac_action_volume">Громкость</string>
+    <string name="mac_action_done">Выполнено на Mac</string>
+    <string name="mac_action_refused_not_allowed">Mac больше не разрешает это. Проверьте «Действия на Mac» в настройках Bridgey на Mac.</string>
+    <string name="mac_action_refused_invalid">Mac не смог прочитать запрос</string>
+    <string name="mac_action_refused_rate_limited">Слишком часто. Подождите немного и повторите.</string>
+    <string name="mac_action_refused_busy">На Mac ещё выполняется быстрая команда</string>
+    <string name="mac_action_refused_permission">Mac сначала нужен Универсальный доступ. Откройте Bridgey на Mac.</string>
+    <string name="mac_action_refused_unavailable">Сейчас недоступно на Mac: приложения больше нет или нет вывода звука</string>
+    <string name="mac_action_refused_failed">Mac не удалось это выполнить</string>
 </resources>

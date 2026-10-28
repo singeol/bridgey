@@ -766,10 +766,11 @@ private fun DeviceScreen(
                     onPing = pairing::sendPing,
                 )
             }
-            if (enabledFeatures[BridgeyFeature.LINKS] == true || enabledFeatures[BridgeyFeature.MEDIA] == true) {
+            if (enabledFeatures[BridgeyFeature.LINKS] == true || enabledFeatures[BridgeyFeature.MEDIA] == true ||
+                enabledFeatures[BridgeyFeature.MAC_ACTIONS] == true) {
                 item {
                     QuickActionsCard(pairing.quickActions, enabledFeatures[BridgeyFeature.LINKS] == true,
-                        enabledFeatures[BridgeyFeature.MEDIA] == true)
+                        enabledFeatures[BridgeyFeature.MEDIA] == true, enabledFeatures[BridgeyFeature.MAC_ACTIONS] == true)
                 }
             }
         } else {
