@@ -42,6 +42,10 @@ separate release must include a privacy policy, permission declaration, explicit
 opt-in UX, retention controls, abuse review, and approval for its distribution
 channel. The permission-free v0.5 implementation remains the fallback.
 
+A design for that separate release, as an opt-in plugin in its own Android
+build flavor, is in [sms-conversations.md](sms-conversations.md). It is not
+implemented.
+
 Primary references:
 
 - [Google Play: Use of SMS or Call Log permission groups](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en)
