@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class BridgeyFeature(val key: String, val title: String) {
     CLIPBOARD("clipboard", "Clipboard"),
     FILES("files", "File transfer"),
+    FOLDERS("folders", "Folder transfer"),
     NOTIFICATIONS("notifications", "Notification forwarding"),
     BATTERY("battery", "Battery status"),
     FIND_DEVICE("find_device", "Find Device"),
@@ -18,7 +19,13 @@ enum class BridgeyFeature(val key: String, val title: String) {
 }
 
 internal fun featureEnabledByLegacyPeer(feature: BridgeyFeature): Boolean =
-    feature !in setOf(BridgeyFeature.CALLS, BridgeyFeature.PING, BridgeyFeature.LINKS, BridgeyFeature.MEDIA)
+    feature !in setOf(
+        BridgeyFeature.CALLS,
+        BridgeyFeature.PING,
+        BridgeyFeature.LINKS,
+        BridgeyFeature.MEDIA,
+        BridgeyFeature.FOLDERS,
+    )
 
 data class BridgeySettingsState(
     val deviceName: String,

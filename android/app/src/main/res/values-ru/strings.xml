@@ -5,4 +5,11 @@
     <string name="welcome_title">Добро пожаловать в Bridgey</string>
     <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
     <string name="welcome_continue">Начать</string>
+    <string name="file_queued">В очереди</string>
+    <string name="transfers_cancel_all">Отменить все</string>
+    <string name="folder_receiving">Получение %1$s (%2$d/%3$d)</string>
+    <string name="folder_file_progress">%1$s (файл %2$d из %3$d)</string>
+    <string name="folder_saved">Папка %1$s сохранена в Download/Bridgey</string>
+    <string name="folder_saved_partly">Сохранено файлов: %1$d из %2$d, в Download/Bridgey/%3$s</string>
+    <string name="folder_received">Папка получена</string>
 </resources>

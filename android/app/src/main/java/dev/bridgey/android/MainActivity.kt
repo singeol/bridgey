@@ -519,7 +519,7 @@ private fun BridgeyApp(
                     enabled = isConnected && featureAvailable,
                     onClick = {
                         content.text?.let { pairing.sendText(it) }
-                        content.files.forEach(pairing::sendFile)
+                        if (content.files.isNotEmpty()) pairing.sendFiles(content.files)
                         onSharedContentHandled()
                     },
                 ) { Text("Send") }
@@ -739,7 +739,9 @@ private fun DeviceScreen(
     onTurnOff: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(pairing::sendFile) }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) pairing.sendFiles(uris)
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
@@ -781,6 +783,9 @@ private fun DeviceScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     SectionTitle("Recent transfers")
                     Spacer(Modifier.weight(1f))
+                    if (fileTransfers.values.count(FileTransferState::active) > 1) {
+                        TextButton(onClick = { pairing.cancelFileTransfer() }) { Text(stringResource(R.string.transfers_cancel_all)) }
+                    }
                     if (fileTransfers.values.any { !it.active }) {
                         TextButton(onClick = pairing::clearTransferHistory) { Text("Clear") }
                     }
@@ -978,7 +983,7 @@ private fun TransferCard(transfer: FileTransferState, cancel: () -> Unit, retry:
                     )
                     Text("$percent%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 }
-            } else if (transfer.active) {
+            } else if (transfer.active && !transfer.queued) {
                 androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(6.dp))
             }
         }
