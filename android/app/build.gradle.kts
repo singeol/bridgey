@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.cyclonedx.bom")
 }
 
 val releaseStoreFile = System.getenv("BRIDGEY_ANDROID_KEYSTORE")
@@ -58,6 +59,19 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM tests that read protocol/ files (android.jar has only stubs).
+    testImplementation("org.json:json:20240303")
+}
+
+// Release SBOM: only the libraries resolved into the release APK. Runs only when
+// requested (./gradlew :app:cyclonedxDirectBom); normal builds are unchanged.
+tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    projectType = org.cyclonedx.model.Component.Type.APPLICATION
+    componentGroup = "dev.bridgey"
+    componentName = "Bridgey"
+    componentVersion = android.defaultConfig.versionName
+    xmlOutput.unsetConvention()
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

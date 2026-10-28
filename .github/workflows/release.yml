@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   android:
@@ -31,15 +31,20 @@ jobs:
           BRIDGEY_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           BRIDGEY_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew :app:assembleRelease :app:testDebugUnitTest
-      - name: Name and checksum APK
+      - name: Generate APK SBOM
+        working-directory: android
+        run: ./gradlew :app:cyclonedxDirectBom
+      - name: Name and checksum APK and SBOM
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk Bridgey-Android.apk
-          shasum -a 256 Bridgey-Android.apk > SHA256SUMS-Android.txt
+          cp android/app/build/reports/cyclonedx-direct/bom.json Bridgey-Android.cdx.json
+          shasum -a 256 Bridgey-Android.apk Bridgey-Android.cdx.json > SHA256SUMS-Android.txt
       - uses: actions/upload-artifact@v7
         with:
           name: Bridgey-Android
           path: |
             Bridgey-Android.apk
+            Bridgey-Android.cdx.json
             SHA256SUMS-Android.txt
 
   macos:
@@ -79,14 +84,106 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
         run: ./package-release.sh
+      - name: Write macOS SBOM
+        working-directory: macos
+        env:
+          SOURCE_REPOSITORY: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, plistlib, os, re, subprocess, uuid
+          from datetime import datetime, timezone
+
+          def tool_version(command, pattern):
+              try:
+                  output = subprocess.run(command, capture_output=True, text=True, check=True).stdout
+              except (OSError, subprocess.CalledProcessError):
+                  return "unknown"
+              match = re.search(pattern, output)
+              return match.group(1) if match else "unknown"
+
+          with open(".build/release/Bridgey.app/Contents/Info.plist", "rb") as plist:
+              version = plistlib.load(plist)["CFBundleShortVersionString"]
+          bom = {
+              "bomFormat": "CycloneDX",
+              "specVersion": "1.6",
+              "serialNumber": f"urn:uuid:{uuid.uuid4()}",
+              "version": 1,
+              "metadata": {
+                  "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "tools": {"components": [
+                      {"type": "application", "name": "Swift", "version": tool_version(["swift", "--version"], r"Swift version (\S+)")},
+                      {"type": "application", "name": "Xcode", "version": tool_version(["xcodebuild", "-version"], r"Xcode (\S+)")},
+                      {"type": "operating-system", "name": "macOS", "version": tool_version(["sw_vers", "-productVersion"], r"(\S+)")},
+                  ]},
+                  "component": {
+                      "type": "application",
+                      "bom-ref": "bridgey-macos",
+                      "name": "Bridgey",
+                      "version": version,
+                      "description": "Bridgey for macOS. The Swift package has no package dependencies; only Apple system frameworks are linked.",
+                      "licenses": [{"license": {"id": "MIT"}}],
+                      "externalReferences": [{"type": "vcs", "url": os.environ["SOURCE_REPOSITORY"]}],
+                  },
+              },
+              "components": [],
+              "dependencies": [{"ref": "bridgey-macos", "dependsOn": []}],
+          }
+          with open("dist/Bridgey-macOS.cdx.json", "w") as output:
+              json.dump(bom, output, indent=2)
+              output.write("\n")
+          PY
+          cd dist
+          shasum -a 256 Bridgey-macOS.cdx.json >> SHA256SUMS-macOS.txt
+          shasum -a 256 -c SHA256SUMS-macOS.txt
       - uses: actions/upload-artifact@v7
         with:
           name: Bridgey-macOS
           path: macos/dist/*
 
-  publish:
+  attest:
     needs: [android, macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Verify checksums
+        working-directory: artifacts
+        run: shasum -a 256 -c SHA256SUMS-Android.txt SHA256SUMS-macOS.txt
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            artifacts/Bridgey-Android.apk
+            artifacts/Bridgey-Android.cdx.json
+            artifacts/SHA256SUMS-Android.txt
+            artifacts/Bridgey-macOS.dmg
+            artifacts/Bridgey-macOS.zip
+            artifacts/Bridgey-macOS.cdx.json
+            artifacts/SHA256SUMS-macOS.txt
+      - name: Attest Android SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/Bridgey-Android.apk
+          sbom-path: artifacts/Bridgey-Android.cdx.json
+      - name: Attest macOS SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            artifacts/Bridgey-macOS.dmg
+            artifacts/Bridgey-macOS.zip
+          sbom-path: artifacts/Bridgey-macOS.cdx.json
+
+  publish:
+    needs: [attest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8

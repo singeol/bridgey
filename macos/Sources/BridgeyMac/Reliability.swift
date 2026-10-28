@@ -25,18 +25,6 @@ func localNetworkPermissionDenied(_ error: NWError) -> Bool {
     }
 }
 
-func decodeProtocolMessage(_ data: Data) throws -> PairingMessage {
-    guard !data.isEmpty, data.count <= maximumProtocolFrameBytes else {
-        throw PairingError.invalidMessage
-    }
-    let message = try JSONDecoder().decode(PairingMessage.self, from: data)
-    guard !message.kind.isEmpty, message.kind.utf8.count <= 64,
-          !message.sessionId.isEmpty, message.sessionId.utf8.count <= 128 else {
-        throw PairingError.invalidMessage
-    }
-    return message
-}
-
 func recoverInterruptedTransfers(_ transfers: [String: FileTransferRow]) -> [String: FileTransferRow] {
     Dictionary(uniqueKeysWithValues: transfers.values
         .map { transfer in

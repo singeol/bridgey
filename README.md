@@ -225,8 +225,9 @@ configured.
 ## Automated releases
 
 Pull requests and pushes to `main` build both clients. Tags matching `v*`
-attach a signed Android APK, a macOS DMG/ZIP, and SHA-256 checksums to a GitHub
-Release.
+attach a signed Android APK, a macOS DMG/ZIP, SHA-256 checksums, and CycloneDX
+SBOMs to a GitHub Release, and record GitHub build provenance attestations. See
+[docs/releasing.md](docs/releasing.md#verifying-a-download) to verify a download.
 
 Configure these GitHub Actions secrets before creating the first tag:
 

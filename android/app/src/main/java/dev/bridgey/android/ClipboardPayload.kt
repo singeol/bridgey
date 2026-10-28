@@ -19,11 +19,13 @@ internal data class RichClipboardContent(val text: String, val html: String) {
             return RichClipboardContent(text, rich)
         }
 
-        fun decode(bytes: ByteArray): RichClipboardContent? = runCatching {
-            val objectValue = JSONObject(bytes.toString(Charsets.UTF_8))
-            if (objectValue.optInt("version") != 1 || objectValue.opt("text") !is String || objectValue.opt("html") !is String) return null
-            create(objectValue.getString("text"), objectValue.getString("html"))
-        }.getOrNull()
+        fun decode(bytes: ByteArray): RichClipboardContent? {
+            val objectValue = strictJsonObject(bytes) ?: return null
+            if (jsonInteger(objectValue.opt("version")) != 1L) return null
+            val text = objectValue.opt("text") as? String ?: return null
+            val html = objectValue.opt("html") as? String ?: return null
+            return create(text, html)
+        }
     }
 }
 

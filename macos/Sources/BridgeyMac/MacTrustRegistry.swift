@@ -51,26 +51,42 @@ final class MacTrustRegistry {
     }
 
     private func migrateDefaults(_ defaults: UserDefaults) {
-        let ids = defaults.stringArray(forKey: "trustedDeviceIDs") ?? []
-        var importedKeys: [String] = []
-        var changed = false
-        for id in ids where UUID(uuidString: id) != nil {
+        let legacy = Self.legacyDevices(in: defaults)
+        guard !legacy.devices.isEmpty else { return }
+        devicesByID.merge(legacy.devices) { _, imported in imported }
+        guard save() else { return }
+        legacy.keys.forEach(defaults.removeObject(forKey:))
+        defaults.removeObject(forKey: "trustedDeviceIDs")
+    }
+
+    /// Trusted devices that versions before 0.4.1 kept in UserDefaults (`trustedDeviceIDs`,
+    /// `trusted.<id>.identityKey`, `trusted.<id>.name`), and the keys to remove once they are saved.
+    static func legacyDevices(in defaults: UserDefaults) -> (devices: [String: MacTrustedDevice], keys: [String]) {
+        var devices: [String: MacTrustedDevice] = [:]
+        var keys: [String] = []
+        for id in defaults.stringArray(forKey: "trustedDeviceIDs") ?? [] where UUID(uuidString: id) != nil {
             let identityKeyName = "trusted.\(id).identityKey"
             let nameKey = "trusted.\(id).name"
             guard let identityKey = defaults.string(forKey: identityKeyName),
                   Data(base64Encoded: identityKey) != nil else { continue }
             let name = defaults.string(forKey: nameKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            devicesByID[id] = MacTrustedDevice(
+            devices[id] = MacTrustedDevice(
                 id: id,
                 name: name?.isEmpty == false ? name! : "Unknown device",
                 identityKey: identityKey
             )
-            importedKeys.append(contentsOf: [identityKeyName, nameKey])
-            changed = true
+            keys.append(contentsOf: [identityKeyName, nameKey])
         }
-        guard changed, save() else { return }
-        importedKeys.forEach(defaults.removeObject(forKey:))
-        defaults.removeObject(forKey: "trustedDeviceIDs")
+        return (devices, keys)
+    }
+
+    /// Decodes the Keychain item that 0.4.1 and later store: a JSON object of device ID to device.
+    /// Entries whose key does not match their ID, or with an invalid ID or identity key, are dropped.
+    static func decodeStoredDevices(_ data: Data) -> [String: MacTrustedDevice] {
+        guard let decoded = try? JSONDecoder().decode([String: MacTrustedDevice].self, from: data) else { return [:] }
+        return decoded.filter { id, device in
+            id == device.id && UUID(uuidString: id) != nil && Data(base64Encoded: device.identityKey) != nil
+        }
     }
 
     private static func loadFromKeychain(service: String, account: String) -> [String: MacTrustedDevice] {
@@ -78,14 +94,10 @@ final class MacTrustRegistry {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let decoded = try? JSONDecoder().decode([String: MacTrustedDevice].self, from: data) else {
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else {
             return [:]
         }
-        return decoded.filter { id, device in
-            id == device.id && UUID(uuidString: id) != nil && Data(base64Encoded: device.identityKey) != nil
-        }
+        return decodeStoredDevices(data)
     }
 
     private func save() -> Bool {
