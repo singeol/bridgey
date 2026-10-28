@@ -5,4 +5,17 @@
     <string name="welcome_title">Welcome to Bridgey</string>
     <string name="welcome_body">Keep your Mac and phone on the same local network. Choose the Mac, compare the pairing code, then confirm it on both devices. Optional permissions are requested only when you enable the related feature.</string>
     <string name="welcome_continue">Get started</string>
+    <string name="screen_share_title">Screen</string>
+    <string name="screen_share_action">Share</string>
+    <string name="screen_stop_detail">Sharing</string>
+    <string name="screen_status_sharing">Your screen is being shared with %1$s</string>
+    <string name="screen_status_starting">Starting to share your screen with %1$s…</string>
+    <string name="screen_notifications_title">Allow notifications to share your screen?</string>
+    <string name="screen_notifications_body">While your screen is shared, Bridgey keeps a notification with Stop visible. Allow Bridgey notifications first, then tap Share again.</string>
+    <string name="screen_sharing_channel">Screen sharing</string>
+    <string name="screen_sharing_channel_detail">Shown for as long as a Mac sees this screen</string>
+    <string name="screen_sharing_title">Your screen is being shared with %1$s</string>
+    <string name="screen_sharing_text">Tap Stop to end it. Turning off the screen ends it too.</string>
+    <string name="screen_sharing_starting">Waiting for the Mac to open its window…</string>
+    <string name="screen_stop">Stop</string>
 </resources>

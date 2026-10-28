@@ -5,4 +5,17 @@
     <string name="welcome_title">Добро пожаловать в Bridgey</string>
     <string name="welcome_body">Подключите Mac и телефон к одной локальной сети. Выберите Mac, сравните код сопряжения и подтвердите его на обоих устройствах. Необязательные разрешения запрашиваются только при включении соответствующей функции.</string>
     <string name="welcome_continue">Начать</string>
+    <string name="screen_share_title">Экран</string>
+    <string name="screen_share_action">Показать</string>
+    <string name="screen_stop_detail">Идёт показ</string>
+    <string name="screen_status_sharing">Экран показывается на %1$s</string>
+    <string name="screen_status_starting">Запуск показа экрана на %1$s…</string>
+    <string name="screen_notifications_title">Разрешить уведомления для показа экрана?</string>
+    <string name="screen_notifications_body">Пока экран показывается, Bridgey держит на виду уведомление с кнопкой «Стоп». Сначала разрешите уведомления Bridgey, затем снова нажмите «Показать».</string>
+    <string name="screen_sharing_channel">Показ экрана</string>
+    <string name="screen_sharing_channel_detail">Видно всё время, пока Mac видит этот экран</string>
+    <string name="screen_sharing_title">Экран показывается на %1$s</string>
+    <string name="screen_sharing_text">Нажмите «Стоп», чтобы закончить. Выключение экрана тоже заканчивает показ.</string>
+    <string name="screen_sharing_starting">Ждём, пока Mac откроет окно…</string>
+    <string name="screen_stop">Стоп</string>
 </resources>

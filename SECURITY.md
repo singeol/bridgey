@@ -83,7 +83,10 @@ There is no telemetry, advertising identifier, account, cloud relay, or remote
 analytics. LAN features communicate directly between paired devices. Sensitive
 OS access requires explicit permission. Global and per-device switches gate
 feature execution; permission-light features default on. Mac media control
-defaults off and requires a locally selected player and Automation consent. Bridgey
+defaults off and requires a locally selected player and Automation consent.
+Experimental screen sharing defaults off on both devices, needs Android's own
+capture consent for every session, and keeps a Stop control visible on both
+devices while it runs. Bridgey
 does not weaken platform background/privacy controls to obtain clipboard or
 notification data.
 

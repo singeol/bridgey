@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Experimental screen sharing (off by default): capture runs in a mediaProjection foreground
+         service, only after Android's own consent dialog, every session. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
@@ -67,6 +70,10 @@
             android:name=".BridgeyConnectionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <service
+            android:name=".screen.ScreenShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <service android:name=".ClipboardTileService" android:exported="true"
             android:label="Bridgey clipboard" android:icon="@drawable/ic_bridgey_notification"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
