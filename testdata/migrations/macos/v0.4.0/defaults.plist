@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>deviceID</key>
+	<string>9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b</string>
+	<key>legacyPreferencesMigrated</key>
+	<true/>
+	<key>settings.device.3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a.battery</key>
+	<false/>
+	<key>settings.device.7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d.clipboard</key>
+	<true/>
+	<key>settings.deviceName</key>
+	<string>Test Mac</string>
+	<key>settings.global.battery</key>
+	<true/>
+	<key>settings.global.clipboard</key>
+	<true/>
+	<key>settings.global.files</key>
+	<false/>
+	<key>settings.global.find_device</key>
+	<true/>
+	<key>settings.global.notifications</key>
+	<true/>
+	<key>settings.onboarding.completed</key>
+	<true/>
+	<key>settings.receiveFolderBookmark</key>
+	<data>
+	bm90IGEgYm9va21hcmsgZnJvbSB0aGlzIG1hY2hpbmU=
+	</data>
+	<key>settings.receiveFolderPath</key>
+	<string>/Users/test/Downloads/Bridgey</string>
+	<key>trusted.3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a.identityKey</key>
+	<string>BGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=</string>
+	<key>trusted.3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a.name</key>
+	<string>Test Phone</string>
+	<key>trusted.7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d.identityKey</key>
+	<string>BHzyexiNA09+ilI4AwS1GsPAiWnid/IbNaYLSPxHZpl4B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E=</string>
+	<key>trusted.7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d.name</key>
+	<string>  </string>
+	<key>trusted.not-a-uuid.identityKey</key>
+	<string>BGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=</string>
+	<key>trusted.not-a-uuid.name</key>
+	<string>Broken</string>
+	<key>trustedDeviceIDs</key>
+	<array>
+		<string>3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a</string>
+		<string>7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d</string>
+		<string>not-a-uuid</string>
+	</array>
+</dict>
+</plist>

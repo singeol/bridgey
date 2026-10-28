@@ -1,6 +1,7 @@
 package dev.bridgey.android
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,8 +38,10 @@ internal fun effectiveFeatureEnabled(
 internal fun effectiveFeatureAvailable(localEnabled: Boolean, remoteEnabled: Boolean): Boolean =
     localEnabled && remoteEnabled
 
-class BridgeySettings(context: Context, defaultDeviceName: String) {
-    private val preferences = context.getSharedPreferences("bridgey.settings", Context.MODE_PRIVATE)
+class BridgeySettings internal constructor(private val preferences: SharedPreferences, defaultDeviceName: String) {
+    constructor(context: Context, defaultDeviceName: String) :
+        this(context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE), defaultDeviceName)
+
     private val mutableState = MutableStateFlow(load(defaultDeviceName))
     val state: StateFlow<BridgeySettingsState> = mutableState.asStateFlow()
 
@@ -138,6 +141,7 @@ class BridgeySettings(context: Context, defaultDeviceName: String) {
     }
 
     companion object {
+        internal const val PREFERENCES_NAME = "bridgey.settings"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_NOTIFICATION_APPLICATION_PREFIX = "notification.application."
         private const val KEY_DISABLED_NOTIFICATION_PACKAGES = "notification.disabled_packages"

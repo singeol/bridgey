@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="device_name">Test Phone</string>
+    <boolean name="global.clipboard" value="true" />
+    <boolean name="global.files" value="true" />
+    <boolean name="global.notifications" value="true" />
+    <boolean name="global.battery" value="true" />
+    <boolean name="global.find_device" value="true" />
+    <boolean name="global.ping" value="true" />
+    <boolean name="global.links" value="false" />
+    <boolean name="global.media" value="true" />
+    <boolean name="global.calls" value="false" />
+    <boolean name="device.6f1d2c3b-4a59-4e68-9d7c-8b6a5f4e3d21.media" value="false" />
+    <boolean name="device.6f1d2c3b-4a59-4e68-9d7c-8b6a5f4e3d21.links" value="true" />
+    <string name="notification.application.com.example.chat">Chat</string>
+    <set name="notification.disabled_packages" />
+    <boolean name="calls.direct_enabled" value="false" />
+</map>
