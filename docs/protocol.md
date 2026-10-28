@@ -21,6 +21,87 @@ and some acknowledgements remain outside the encrypted payload; traffic
 metadata is visible. Replay caches are bounded and session-local, not persistent.
 The future transport design must not be advertised as an implemented guarantee.
 
+`pairing.cancel` ends the current session. While connected, each client sends
+an unencrypted `heartbeat.ping` every ten seconds and answers with
+`heartbeat.pong` carrying the same `messageId`. Once a peer has sent either
+heartbeat message, 30 seconds without any message from it closes the session.
+Older peers that never send heartbeats are not timed out.
+
+## Version 1 compatibility contract
+
+Status: proposed for review. It describes what the 0.6 clients already do and
+is meant to be frozen at 1.0. It covers the native newline JSON transport
+above, not the future WebSocket envelope described later in this document.
+
+The machine-readable list of every message kind is
+[`protocol/messages.json`](../protocol/messages.json): direction, gating
+feature keys, whether the payload is encrypted, envelope fields, payload fields
+with their bounds, replies, and the transport limits. The Android
+`ProtocolContractTest` and macOS `ProtocolContractTests` scan each client's
+sources for message kinds that are sent or dispatched and fail when a kind is
+missing from that file, or when the file lists a kind a client does not use.
+They also check that the file's feature keys match `BridgeyFeature` and
+`featureEnabledByLegacyPeer`, and that every listed kind is described in this
+document.
+
+What 1.0 freezes:
+
+- Framing: one UTF-8 JSON object per line ended by LF, at most 65,536 bytes per
+  frame before decoding. A CR before the LF is ignored.
+- Envelope: `kind` (1 to 64 bytes) and `sessionId` (at most 128 bytes) are
+  required strings; the other envelope fields in `protocol/messages.json` are
+  optional, and each has one type. An oversized or unterminated frame, invalid
+  UTF-8, a frame that is not a JSON object, or a missing `kind` or `sessionId`
+  closes the session before any message is dispatched.
+- Every message kind in `protocol/messages.json`: its direction, envelope
+  fields, payload fields, their types and bounds, and its meaning.
+- Pairing and encryption as described in this document and in `SECURITY.md`.
+
+Rules:
+
+1. Unknown kinds are ignored. A receiver drops a message whose `kind` it does
+   not know and keeps the session. This is what lets a newer client add a
+   message without breaking an older peer.
+2. Unknown fields are ignored, in the envelope and in payloads. New fields are
+   optional. A field never changes its type or meaning; a different meaning
+   needs a new field or a new kind.
+3. Feature negotiation gates every new message. Each peer sends a complete
+   `features.update` map after pairing and whenever local policy changes, and
+   every value in that map is a boolean. The original keys (`clipboard`,
+   `files`, `notifications`, `battery`, `find_device`) must be present. Every
+   later key is optional, a missing key means `false`, and clients list it in
+   `featureEnabledByLegacyPeer` as disabled so a peer that predates it never
+   receives its messages. A sender does not send a gated message unless both
+   peers report its key as `true`. A receiver that has the feature turned off
+   answers with the feature's rejection (`clipboard.rejected`,
+   `files.rejected`, `calls.rejected`) when one exists and otherwise ignores
+   the message; it may resend `features.update` to repair the sender's state.
+4. Bounds are part of the contract. A receiver accepts everything within the
+   bounds listed for a message, and a sender never exceeds them. Raising a
+   bound, changing a payload `version`, or changing required behaviour needs a
+   new feature key, so an older peer is never sent something it would reject.
+5. Malformed is not unknown. Inside a known kind, a payload that fails
+   decryption or validation closes the session, except `quick.request`,
+   `quick.result`, and `media.state`, which are dropped. Feature-specific
+   rejections, such as an invalid phone number answered with `calls.rejected`,
+   keep the session.
+6. Replay protection is per session. Encrypted messages with a `messageId` go
+   through a window of the most recent 256 accepted IDs; a repeated ID has no
+   effect. `quick.request` also carries a per-feature sequence that must
+   increase. Every session has its own key, so nothing replays across sessions.
+7. Retiring a key: stop sending its messages and advertise the key as `false`
+   for at least one release, then stop advertising it. Receivers keep ignoring
+   its messages, and the key and its kinds are never reused with another
+   meaning.
+8. A change to framing, authentication, or behaviour required of every peer is
+   a new protocol version and needs negotiation before use (see Session
+   negotiation below). Until then the protocol is version 1.
+
+To add a message: describe it in this document first, add one entry to
+`protocol/messages.json`, and gate it with a new feature key unless it only
+answers a message that already has one. The contract tests then pass on both
+platforms only when both clients use the new kind.
+
 ## Discovery
 
 Browse and publish DNS-SD service type `_bridgey._tcp.local.`. TXT values are
@@ -228,7 +309,8 @@ The Android v1 receiver writes through `MediaStore` to `Download/Bridgey` with
 failure without requiring broad storage access.
 Either peer can send `files.cancel` with the transfer ID. The sender stops
 reading and sending chunks, while the receiver closes and deletes its partial
-file. Cancellation is idempotent and leaves the authenticated session usable.
+file. Cancellation is idempotent, is answered with `files.cancel.ack`, and
+leaves the authenticated session usable.
 For Mac-to-Android transfers, Android sends cumulative `files.chunk.ack`
 messages and macOS keeps at most 64 chunks (1.5 MiB) unacknowledged. This bounds
 memory and cancellation latency without limiting throughput to one network
@@ -322,7 +404,8 @@ before any side effect. Number content is not logged.
 
 ## Compatibility
 
-Adding optional fields or message types is backward compatible. Changing field
-meaning, authentication, or required behavior requires a new capability or
+The native transport follows the Version 1 compatibility contract above. For
+the future envelope, adding optional fields or message types is backward
+compatible. Changing field meaning, authentication, or required behavior requires a new capability or
 major version. JSON is a codec behind the envelope model; a future protobuf
 codec must preserve IDs, types, correlation, and negotiated semantics.
