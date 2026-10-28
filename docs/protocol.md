@@ -93,11 +93,11 @@ optional details. Error text must not disclose secrets.
 The current native clients also exchange an authenticated, encrypted
 `features.update` message after pairing and whenever local policy changes. Its
 version 1 payload contains a complete boolean map for `clipboard`, `files`,
-`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, and `media`. A UI action is
-available only when both peers report the corresponding feature as enabled. Clients
+`notifications`, `battery`, `find_device`, `ping`, `calls`, `links`, `media`, and `mac_actions`.
+A UI action is available only when both peers report the corresponding feature as enabled. Clients
 predating this message are treated as enabling the original v1 features for
-compatibility; the later `calls`, `ping`, `links`, and `media` features are disabled unless a peer
-advertises them explicitly.
+compatibility; the later `calls`, `ping`, `links`, `media`, and `mac_actions` features are disabled
+unless a peer advertises them explicitly.
 
 ## Pairing flow
 
@@ -148,6 +148,8 @@ that an operation definitely never reached the other peer.
   AppleScript instructions, never received source code or a remote shell.
   Automation failures and a busy player are reported as rejected. Accepted
   means the player command completed, not that a particular track must exist.
+- `mac_actions`: Android → Mac, an entry identifier from the Mac's published
+  list; see Mac actions below.
 - `media.state`: Mac → Android; `version`, `player`, `title`/`artist` (256
   characters each), boolean `playing`, integer `position`/`duration`
   (0…604800), `volume` (0…100), bounded `detail`. Optional base64 `artwork`
@@ -157,6 +159,74 @@ that an operation definitely never reached the other peer.
 Music artwork comes from player automation, not filesystem browsing; it is
 optional and may be unavailable. Spotify artwork is not downloaded. Metadata
 refreshes after commands/settings changes and on the ten-second heartbeat.
+
+### Mac actions (`mac_actions`)
+
+Android asks the Mac to run one entry from a list the Mac published for it.
+The phone never sends a command, a path, an application or Shortcut name, or
+arguments. It sends an opaque entry identifier, and the Mac maps it to a fixed
+local operation. There is no shell; the only operand is the `volume_set` level.
+
+The Mac advertises `mac_actions` only after its user turns the feature on (off
+by default); per-device switches apply as for other features. Every group of
+actions (lock, display sleep, sleep, screen saver, volume) also has its own
+local switch, off by default, and applications and Shortcuts are opt-in lists
+the Mac user builds locally. Android enables the feature by default because
+the Mac is the gate.
+
+`mac_actions.state` (Mac to Android) is AES-GCM-encrypted like `media.state`
+and limited to 8 KiB plaintext. The Mac sends it after `features.update` shows
+the feature enabled on both peers, whenever its local list changes, and when
+the volume changed since the previous state (checked on the ten-second
+heartbeat). It contains `version: 1`, `actions` (at most 48 entries, each
+`{ "id": ..., "title": ... }`) and optional `volume` (`{ "level": 0…100,
+"muted": bool }`) when volume actions are allowed and the default output
+exposes a volume. Each state replaces the previous list. Android drops entries
+with an unknown or repeated identifier or an invalid title, and forgets the
+list when the feature becomes unavailable or the session ends.
+
+| `id` | Operation on the Mac |
+| --- | --- |
+| `lock` | Post the system Lock Screen shortcut (Control-Command-Q); requires macOS Accessibility access, requested only when the local Lock switch is turned on |
+| `display_sleep` | Turn the display off (`/usr/bin/pmset displaysleepnow`, fixed arguments) |
+| `sleep` | Put the Mac to sleep (IOKit `IOPMSleepSystem`); the result is sent first and the Mac sleeps one second later |
+| `screensaver` | Open the system `ScreenSaverEngine.app` |
+| `volume_up`, `volume_down` | Change the default output volume by one step (1/16) |
+| `volume_mute` | Toggle mute on the default output |
+| `volume_set` | Set the default output volume; `value` is a decimal integer 0…100 |
+| `app:<uuid>` | Open an application the Mac user added; the UUID is a random local handle |
+| `shortcut:<uuid>` | Run a Shortcut the Mac user added, with `/usr/bin/shortcuts run <name>` as separate process arguments and no input; one at a time, stopped after 60 seconds |
+
+Titles are 1…64 characters without control characters. Android shows its own
+localized titles for the fixed identifiers and the Mac's title (the application
+or Shortcut name) for `app:` and `shortcut:` entries.
+
+Android sends `quick.request` with `feature: "mac_actions"`, `action` set to an
+`id` from the latest state, and `value` empty except for `volume_set`. Before
+anything runs, the Mac checks, in order: the request belongs to the current
+session and passes the per-feature sequence check; `mac_actions` is available;
+the identifier is in the list the Mac would publish now; `value` is valid for
+that identifier; the rate limit allows it. It then checks the operating system
+permission and runs the operation.
+
+The Mac answers `quick.result` with `accepted`. A rejected result may carry a
+`reason`: `not_allowed` (the feature, the action switch or the list entry is
+off), `invalid`, `rate_limited`, `busy` (a Shortcut is still running),
+`permission_required` (Accessibility for `lock`), `unavailable` (the application
+or output device is gone) or `failed`. A result for a volume action may carry
+the new `volume`. Accepted means the operation was performed; for a Shortcut
+still running after five seconds it means the Shortcut started. Older clients
+ignore the optional fields.
+
+Rate limits are token buckets, and requests over the limit are rejected rather
+than queued: volume actions 10 at once, then 5 per second; every other action 3
+at once, then one every two seconds. The Mac keeps the last 20 outcomes (time,
+action title, result) in memory for its Settings window; they are never sent or
+written to disk. Diagnostics record only the action group and outcome, never
+an identifier, title or volume level.
+
+Privacy: the titles of listed applications and Shortcuts are sent to the paired
+phone. Nothing else about installed applications or Shortcuts leaves the Mac.
 
 ### Battery (`battery.send.v1`)
 
